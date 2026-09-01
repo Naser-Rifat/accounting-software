@@ -23,7 +23,7 @@ export default async function LoginPage() {
       <div className="w-full max-w-sm">
         <div className="mb-8 text-center">
           <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
-            Apex DMIT
+            Grapcode
           </p>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight">Accounting System</h1>
         </div>

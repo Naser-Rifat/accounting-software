@@ -22,7 +22,7 @@ export default async function ModulesPage() {
       <header className="mb-10 flex flex-wrap items-start justify-between gap-4">
         <div>
           <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
-            Apex DMIT
+            Grapcode
           </p>
           <h1 className="mt-1 text-3xl font-semibold tracking-tight">Modules</h1>
           <p className="mt-2 text-muted-foreground">
