@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f172a"/>
+      <stop offset="100%" stop-color="#1e293b"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8"/>
+      <stop offset="100%" stop-color="#6366f1"/>
+    </linearGradient>
+    <linearGradient id="glow" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#10b981"/>
+      <stop offset="100%" stop-color="#06b6d4"/>
+    </linearGradient>
+  </defs>
+  <!-- Background rounded squircle -->
+  <rect width="32" height="32" rx="8" fill="url(#bg)"/>
+  <rect width="30" height="30" x="1" y="1" rx="7" fill="none" stroke="#334155" stroke-width="0.8"/>
+  
+  <!-- Modern Ledger Bars -->
+  <rect x="7" y="14" width="4" height="11" rx="1.5" fill="url(#glow)"/>
+  <rect x="14" y="9" width="4" height="16" rx="1.5" fill="url(#accent)"/>
+  <rect x="21" y="16" width="4" height="9" rx="1.5" fill="#94a3b8"/>
+  
+  <!-- Trend / Balance curve -->
+  <path d="M8.5 12 L16 7 L23.5 14" fill="none" stroke="#ffffff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="16" cy="7" r="1.4" fill="#38bdf8"/>
+</svg>
