@@ -47,3 +47,16 @@ export const reverseVoucherSchema = z.object({
   reversalDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Enter a valid date'),
   reason: z.string().trim().min(3, 'Give a reason for the reversal').max(300),
 })
+
+export const approveVoucherSchema = z.object({
+  entryId: z.string().min(1),
+})
+
+export const rejectVoucherSchema = z.object({
+  entryId: z.string().min(1),
+  reason: z
+    .string()
+    .trim()
+    .min(3, 'Tell the maker what to correct')
+    .max(300),
+})

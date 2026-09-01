@@ -20,6 +20,11 @@ import type { PrismaTransaction } from '@/server/db/client'
  * this function owns the mechanics: period resolution and locking, account
  * validation, control-account rules, currency conversion, balance proof, gapless
  * numbering, and the DRAFT -> POSTED flip that the immutability triggers expect.
+ *
+ * With `submitForApproval`, that flip stops at PENDING_APPROVAL instead. The
+ * voucher is fully validated, numbered and frozen, but invisible to every
+ * report — they all filter on status IN ('POSTED','REVERSED') — until a second
+ * person approves it through `approveEntry`.
  */
 
 /** Amounts are given in the voucher's transaction currency, not base currency. */
@@ -52,6 +57,13 @@ export type PostEntryInput = {
   isManual?: boolean
   /** ACCOUNTANT/ADMIN may post into a soft-closed period. */
   canPostToSoftClosed?: boolean
+  /**
+   * Stop at PENDING_APPROVAL rather than POSTED, so a different person must
+   * approve the voucher before it reaches the ledger. Used for hand-entered
+   * vouchers; postings driven by an already-approved source document (a bill,
+   * a depreciation run) skip the queue because their control sits upstream.
+   */
+  submitForApproval?: boolean
 }
 
 export type PostedEntry = {
@@ -252,9 +264,12 @@ export async function postEntry(
     })),
   })
 
+  const now = new Date()
   await tx.journalEntry.update({
     where: { id: entry.id },
-    data: { status: 'POSTED', postedAt: new Date() },
+    data: input.submitForApproval
+      ? { status: 'PENDING_APPROVAL', submittedBy: input.createdBy, submittedAt: now }
+      : { status: 'POSTED', postedAt: now },
   })
 
   return {
@@ -373,4 +388,138 @@ export async function reverseEntry(
     totalDebit,
     totalCredit,
   }
+}
+
+/**
+ * Approve a pending voucher and post it.
+ *
+ * The second half of maker-checker. The period is resolved again rather than
+ * trusted from submission time: a period can close between a voucher being
+ * submitted and someone getting round to reviewing it, and posting into it then
+ * would breach rule 8.
+ *
+ * The self-approval refusal is duplicated in a database trigger. That is
+ * deliberate — a control that only one layer enforces is a control that a future
+ * code path can forget.
+ */
+export async function approveEntry(
+  tx: PrismaTransaction,
+  entryId: string,
+  options: {
+    approvedBy: string
+    canPostToSoftClosed?: boolean
+  },
+): Promise<PostedEntry> {
+  const entry = await tx.journalEntry.findUnique({
+    where: { id: entryId },
+    include: { lines: true },
+  })
+
+  if (!entry) {
+    throw new AccountingError('UNKNOWN_ACCOUNT', `Voucher ${entryId} does not exist.`)
+  }
+  if (entry.status === 'POSTED' || entry.status === 'REVERSED') {
+    throw new AccountingError(
+      'ALREADY_POSTED',
+      `Voucher ${entry.voucherNo} is already posted.`,
+    )
+  }
+  if (entry.status !== 'PENDING_APPROVAL') {
+    throw new AccountingError(
+      'NOT_PENDING_APPROVAL',
+      `Voucher ${entry.voucherNo} is a draft and has not been submitted for approval.`,
+    )
+  }
+
+  const maker = entry.submittedBy ?? entry.createdBy
+  if (maker === options.approvedBy) {
+    throw new AccountingError(
+      'SELF_APPROVAL',
+      `Voucher ${entry.voucherNo} was submitted by ${maker} and needs a different person to approve it.`,
+      { voucherNo: entry.voucherNo, maker },
+    )
+  }
+
+  // Re-resolve rather than reuse entry.periodId: the period may have closed
+  // while the voucher sat in the queue.
+  const period = await resolvePeriod(tx, entry.entryDate, {
+    canPostToSoftClosed: options.canPostToSoftClosed,
+  })
+
+  const now = new Date()
+  await tx.journalEntry.update({
+    where: { id: entry.id },
+    data: {
+      status: 'POSTED',
+      postedAt: now,
+      approvedBy: options.approvedBy,
+      approvedAt: now,
+    },
+  })
+
+  return {
+    id: entry.id,
+    voucherNo: entry.voucherNo,
+    periodId: period.periodId,
+    totalDebit: entry.lines.reduce((sum, l) => sum.add(dec(l.debit)), ZERO),
+    totalCredit: entry.lines.reduce((sum, l) => sum.add(dec(l.credit)), ZERO),
+  }
+}
+
+/**
+ * Send a pending voucher back to its maker with a reason.
+ *
+ * It returns to DRAFT rather than to a REJECTED status of its own, because
+ * DRAFT is the only state in which the immutability triggers allow the lines to
+ * be corrected — and correcting them is the entire point of a rejection. The
+ * reason and reviewer stay on the record, so "why did this come back" is
+ * answerable later.
+ *
+ * The voucher keeps its number. Rule 6: numbers are never reused, so a rejected
+ * voucher that is abandoned leaves its number consumed, exactly as a cancelled
+ * document does.
+ */
+export async function rejectEntry(
+  tx: PrismaTransaction,
+  entryId: string,
+  options: { rejectedBy: string; reason: string },
+): Promise<{ id: string; voucherNo: string }> {
+  const entry = await tx.journalEntry.findUnique({ where: { id: entryId } })
+
+  if (!entry) {
+    throw new AccountingError('UNKNOWN_ACCOUNT', `Voucher ${entryId} does not exist.`)
+  }
+  if (entry.status === 'POSTED' || entry.status === 'REVERSED') {
+    throw new AccountingError(
+      'ALREADY_POSTED',
+      `Voucher ${entry.voucherNo} is already posted — reverse it instead of rejecting it.`,
+    )
+  }
+  if (entry.status !== 'PENDING_APPROVAL') {
+    throw new AccountingError(
+      'NOT_PENDING_APPROVAL',
+      `Voucher ${entry.voucherNo} is not awaiting approval.`,
+    )
+  }
+
+  const maker = entry.submittedBy ?? entry.createdBy
+  if (maker === options.rejectedBy) {
+    throw new AccountingError(
+      'SELF_APPROVAL',
+      `Voucher ${entry.voucherNo} was submitted by ${maker} and needs a different person to review it.`,
+      { voucherNo: entry.voucherNo, maker },
+    )
+  }
+
+  await tx.journalEntry.update({
+    where: { id: entry.id },
+    data: {
+      status: 'DRAFT',
+      rejectedBy: options.rejectedBy,
+      rejectedAt: new Date(),
+      rejectionReason: options.reason,
+    },
+  })
+
+  return { id: entry.id, voucherNo: entry.voucherNo }
 }
