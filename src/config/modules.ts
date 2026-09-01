@@ -80,7 +80,7 @@ export const MODULES: AppModule[] = [
     name: 'Purchases & Payments',
     description: 'Expense bills, vendor payments and debit notes',
     href: '/purchases/bills',
-    status: 'PLANNED',
+    status: 'AVAILABLE',
     icon: 'purchases',
     accent: 'rose',
   },

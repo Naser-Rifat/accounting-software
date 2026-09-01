@@ -189,3 +189,30 @@ export const NAV: NavGroup[] = [
     ],
   },
 ]
+
+/** Sidebar for the Purchases & Payments module. */
+export const PURCHASES_NAV: NavGroup[] = [
+  {
+    label: 'Purchases',
+    items: [
+      { label: 'Expense Bills', href: '/purchases/bills' },
+      { label: 'Payments', href: '/purchases/payments' },
+      { label: 'Debit Notes', href: '/purchases/debit-notes' },
+    ],
+  },
+  {
+    label: 'Vendors',
+    items: [
+      { label: 'Vendors', href: '/purchases/vendors' },
+      { label: 'Payables Aging', href: '/purchases/aging' },
+    ],
+  },
+  {
+    label: 'Accounting',
+    items: [
+      { label: 'Vouchers', href: '/accounting/vouchers' },
+      { label: 'Party Ledger', href: '/accounting/party-ledger' },
+      { label: 'Trial Balance', href: '/accounting/trial-balance' },
+    ],
+  },
+]

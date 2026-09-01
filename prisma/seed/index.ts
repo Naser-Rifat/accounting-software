@@ -19,6 +19,7 @@ import {
 } from '../../src/config/app'
 import { hashPassword } from '../../src/server/auth/password'
 import { ACCOUNT_SEED } from './accounts'
+import { EXPENSE_CATEGORY_SEED } from './expense-categories'
 
 if (existsSync('.env')) process.loadEnvFile('.env')
 
@@ -217,6 +218,21 @@ async function seedFiscalYear() {
 }
 
 /**
+ * Expense categories map a kind of spend to its GL account, so an accountant can
+ * re-map without a developer. 5xxx is cost of revenue, 6xxx overhead.
+ */
+async function seedExpenseCategories() {
+  for (const category of EXPENSE_CATEGORY_SEED) {
+    await prisma.expenseCategory.upsert({
+      where: { code: category.code },
+      create: category,
+      update: { name: category.name, glAccountCode: category.glAccountCode },
+    })
+  }
+  console.log(`  expense cats    ${EXPENSE_CATEGORY_SEED.length}`)
+}
+
+/**
  * Asset categories decide which accounts an asset posts to, so the mapping is
  * data rather than code. Cost in 15xx, accumulated in 1590, charge in 6130.
  */
@@ -296,6 +312,7 @@ async function main() {
   await seedSettings()
   await seedFiscalYear()
   await seedAssetCategories()
+  await seedExpenseCategories()
   await seedAdminUser()
   console.log('Done.')
 }

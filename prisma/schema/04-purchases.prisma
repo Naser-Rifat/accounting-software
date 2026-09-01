@@ -1,0 +1,168 @@
+// ---------------------------------------------------------------------------
+// PURCHASES & PAYMENTS
+//
+// The purchase side of the ledger: vendor bills, the payments that settle them,
+// and debit notes that reduce them. Vendors are Parties, so every posting to
+// 2010 Accounts Payable carries one — that is what makes the control account
+// reconcile to the vendor subledger.
+//
+// Rules: docs/modules/07-expenses.md · Entries: docs/06-posting-matrix.md 20-24
+// ---------------------------------------------------------------------------
+
+enum BillStatus {
+  DRAFT
+  APPROVED
+  PARTIALLY_PAID
+  PAID
+  CANCELLED
+}
+
+enum PaymentMethod {
+  CASH
+  BANK_TRANSFER
+  CHEQUE
+  CARD
+  MOBILE_BANKING
+}
+
+/// Maps a kind of spend to the account it posts to. Data, not code, so an
+/// accountant can re-map without a developer.
+model ExpenseCategory {
+  id   String @id @default(cuid())
+  code String @unique
+  name String
+
+  /// 5xxx for cost of revenue, 6xxx for overhead.
+  glAccountCode String
+  isActive      Boolean @default(true)
+
+  bills ExpenseBill[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model ExpenseBill {
+  id     String @id @default(cuid())
+  billNo String @unique
+
+  /// The vendor. Always a Party, because 2010 is a control account.
+  partyId    String
+  categoryId String
+
+  incurredOn DateTime  @db.Date
+  dueOn      DateTime? @db.Date
+
+  /// Net of tax. `taxAmount` is recoverable input VAT, posted to 1320.
+  amount    Decimal @db.Decimal(18, 2)
+  taxAmount Decimal @default(0) @db.Decimal(18, 2)
+  taxCode   String?
+  /// amount + taxAmount — what the vendor is owed.
+  total     Decimal @db.Decimal(18, 2)
+
+  currency String  @default("BDT")
+  fxRate   Decimal @default(1) @db.Decimal(18, 8)
+
+  /// The vendor's own invoice number, for matching against their statement.
+  vendorRef   String?
+  description String
+
+  status BillStatus @default(DRAFT)
+
+  /// Set for costs attributable to one student application, so per-student
+  /// profitability stays computable.
+  applicationRef String?
+  costCenterId   String?
+
+  /// The PB voucher raised when the bill was approved.
+  journalEntryId String?
+  approvedOn     DateTime?
+  approvedBy     String?
+
+  party       Party               @relation(fields: [partyId], references: [id])
+  category    ExpenseCategory     @relation(fields: [categoryId], references: [id])
+  allocations PaymentAllocation[]
+  debitNotes  DebitNote[]
+
+  createdBy String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([partyId])
+  @@index([status])
+  @@index([dueOn])
+}
+
+/// Money out. One payment may settle several bills, which is why allocation is
+/// its own table rather than a column on the bill.
+model Payment {
+  id        String @id @default(cuid())
+  paymentNo String @unique
+
+  partyId String
+  paidOn  DateTime @db.Date
+
+  /// Gross amount settled against the vendor's account.
+  amount      Decimal @db.Decimal(18, 2)
+  /// Tax withheld on the vendor's behalf and owed to the authority (2320).
+  withheldTax Decimal @default(0) @db.Decimal(18, 2)
+  /// amount - withheldTax — what actually left the bank.
+  netPaid     Decimal @db.Decimal(18, 2)
+
+  currency String  @default("BDT")
+  fxRate   Decimal @default(1) @db.Decimal(18, 8)
+
+  method          PaymentMethod @default(BANK_TRANSFER)
+  reference       String?
+  bankAccountCode String
+
+  journalEntryId String?
+
+  party       Party               @relation(fields: [partyId], references: [id])
+  allocations PaymentAllocation[]
+
+  createdBy String
+  createdAt DateTime @default(now())
+
+  @@index([partyId])
+  @@index([paidOn])
+}
+
+model PaymentAllocation {
+  id        String  @id @default(cuid())
+  paymentId String
+  billId    String
+  amount    Decimal @db.Decimal(18, 2)
+
+  payment Payment     @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  bill    ExpenseBill @relation(fields: [billId], references: [id])
+
+  /// A payment settles a given bill once; a second settlement is a second row
+  /// on a different payment.
+  @@unique([paymentId, billId])
+  @@index([billId])
+}
+
+/// Reduces a posted bill. Bills are never edited — docs/03 rule 5.
+model DebitNote {
+  id     String @id @default(cuid())
+  noteNo String @unique
+
+  partyId String
+  billId  String?
+
+  issuedOn DateTime @db.Date
+  amount   Decimal  @db.Decimal(18, 2)
+  reason   String
+
+  journalEntryId String?
+
+  party Party        @relation(fields: [partyId], references: [id])
+  bill  ExpenseBill? @relation(fields: [billId], references: [id])
+
+  createdBy String
+  createdAt DateTime @default(now())
+
+  @@index([partyId])
+  @@index([billId])
+}

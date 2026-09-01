@@ -243,7 +243,10 @@ model Party {
   currency           String
   isActive           Boolean @default(true)
 
-  lines JournalLine[]
+  lines      JournalLine[]
+  bills      ExpenseBill[]
+  payments   Payment[]
+  debitNotes DebitNote[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
