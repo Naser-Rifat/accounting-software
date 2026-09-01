@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 
 import { Amount, PageShell } from '@/components/layout/page-shell'
+import { VoucherStatusBadge } from '@/components/shared/voucher-status-badge'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
@@ -38,9 +39,7 @@ export default async function VoucherDetailPage({
       subtitle={`${voucher.voucherType} · ${voucher.date} · ${voucher.period}`}
     >
       <div className="flex flex-wrap items-center gap-2">
-        <Badge variant={voucher.status === 'POSTED' ? 'secondary' : 'outline'}>
-          {voucher.status.toLowerCase()}
-        </Badge>
+        <VoucherStatusBadge status={voucher.status} />
         <Badge variant="outline">{voucher.sourceType}</Badge>
         {voucher.currency !== 'BDT' ? (
           <Badge variant="outline">

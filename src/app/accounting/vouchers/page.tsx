@@ -1,9 +1,8 @@
 import Link from 'next/link'
 
 import { Amount, PageShell } from '@/components/layout/page-shell'
-import { Badge } from '@/components/ui/badge'
-
 import { Card, CardContent } from '@/components/ui/card'
+import { VoucherStatusBadge } from '@/components/shared/voucher-status-badge'
 import {
   Table,
   TableBody,
@@ -23,6 +22,22 @@ export const dynamic = 'force-dynamic'
 const TYPES: (VoucherType | 'ALL')[] = [
   'ALL', 'JV', 'SI', 'CN', 'PB', 'DN', 'RV', 'PV', 'CV', 'OB', 'CL',
 ]
+
+const STATUSES: { value: VoucherStatus | 'ALL'; label: string }[] = [
+  { value: 'ALL', label: 'All statuses' },
+  { value: 'PENDING_APPROVAL', label: 'Awaiting approval' },
+  { value: 'POSTED', label: 'Posted' },
+  { value: 'DRAFT', label: 'Draft' },
+  { value: 'REVERSED', label: 'Reversed' },
+]
+
+function withParams(type: string, status: string) {
+  const search = new URLSearchParams()
+  if (type !== 'ALL') search.set('type', type)
+  if (status !== 'ALL') search.set('status', status)
+  const query = search.toString()
+  return query ? `/accounting/vouchers?${query}` : '/accounting/vouchers'
+}
 
 export default async function VouchersPage({
   searchParams,
@@ -47,14 +62,30 @@ export default async function VouchersPage({
           {TYPES.map((type) => (
             <Link
               key={type}
-              href={type === 'ALL' ? '/accounting/vouchers' : `/accounting/vouchers?type=${type}`}
+              href={withParams(type, statusParam)}
               className={
                 typeParam === type
-                  ? 'rounded-md bg-foreground px-2.5 py-1 text-xs font-medium text-background'
-                  : 'rounded-md border px-2.5 py-1 text-xs hover:bg-accent'
+                  ? 'rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground'
+                  : 'rounded-md border px-2.5 py-1 text-xs hover:bg-accent hover:text-accent-foreground'
               }
             >
               {type}
+            </Link>
+          ))}
+        </div>
+
+        <div className="flex flex-wrap gap-1">
+          {STATUSES.map((option) => (
+            <Link
+              key={option.value}
+              href={withParams(typeParam, option.value)}
+              className={
+                statusParam === option.value
+                  ? 'rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground'
+                  : 'rounded-md border px-2.5 py-1 text-xs hover:bg-accent hover:text-accent-foreground'
+              }
+            >
+              {option.label}
             </Link>
           ))}
         </div>
@@ -83,6 +114,7 @@ export default async function VouchersPage({
                   <TableHead className="w-16">Type</TableHead>
                   <TableHead className="w-28">Date</TableHead>
                   <TableHead>Narration</TableHead>
+                  <TableHead className="w-40">Status</TableHead>
                   <TableHead className="w-28">Period</TableHead>
                   <TableHead className="w-32 text-right">Amount</TableHead>
                 </TableRow>
@@ -97,16 +129,14 @@ export default async function VouchersPage({
                       >
                         {row.voucherNo}
                       </Link>
-                      {row.status === 'REVERSED' ? (
-                        <Badge variant="outline" className="ml-2">
-                          reversed
-                        </Badge>
-                      ) : null}
                     </TableCell>
                     <TableCell className="text-xs">{row.voucherType}</TableCell>
                     <TableCell className="whitespace-nowrap text-sm">{row.date}</TableCell>
                     <TableCell className="max-w-md truncate text-sm">
                       {row.narration}
+                    </TableCell>
+                    <TableCell>
+                      <VoucherStatusBadge status={row.status} />
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
                       {row.period}
