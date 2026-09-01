@@ -1,0 +1,533 @@
+// ---------------------------------------------------------------------------
+// ACCOUNTING CORE — the transaction engine
+//
+// This is the centre of the system. Every other module exists to feed vouchers
+// into it. Rules: docs/03-accounting-standards.md
+// Accounts:    docs/04-chart-of-accounts.md
+// Vouchers:    docs/05-voucher-types.md
+// Entries:     docs/06-posting-matrix.md
+// ---------------------------------------------------------------------------
+
+enum AccountType {
+  ASSET
+  LIABILITY
+  EQUITY
+  INCOME
+  EXPENSE
+}
+
+enum VoucherType {
+  SI // Sales Invoice
+  CN // Credit Note
+  PB // Purchase Bill
+  DN // Debit Note
+  RV // Receipt Voucher
+  PV // Payment Voucher
+  CV // Contra Voucher
+  JV // Journal Voucher
+  OB // Opening Balance
+  CL // Closing / Year-end
+}
+
+enum VoucherStatus {
+  DRAFT
+  POSTED
+  REVERSED
+}
+
+enum FiscalYearStatus {
+  OPEN
+  CLOSED
+}
+
+enum PeriodStatus {
+  OPEN
+  SOFT_CLOSED
+  CLOSED
+}
+
+enum PartyType {
+  STUDENT
+  UNIVERSITY
+  COUNSELOR
+  AGENT
+  VENDOR
+  OTHER
+}
+
+enum CostCenterType {
+  BRANCH
+  COUNSELOR
+  INTAKE
+  CAMPAIGN
+}
+
+enum TaxKind {
+  OUTPUT_VAT
+  INPUT_VAT
+  WITHHOLDING_RECEIVABLE
+  WITHHOLDING_PAYABLE
+}
+
+// --- Settings and numbering — docs/modules/16-settings.md ------------------
+
+enum SettingSection {
+  COMPANY
+  TAX
+  NUMBERING
+  FISCAL_YEAR
+  ACCOUNTING
+  COMMISSION
+  APPROVALS
+  NOTIFICATIONS
+  DOCUMENTS
+}
+
+enum SettingDataType {
+  STRING
+  TEXT
+  INT
+  DECIMAL
+  PERCENT
+  BOOLEAN
+  DATE
+  ENUM
+  JSON
+  FILE_URL
+}
+
+/// VOUCHER series produce voucher numbers (SI, RV, JV...); DOCUMENT series
+/// produce business document numbers (STU, APP, CLM, INV, EXP).
+enum SeriesScope {
+  VOUCHER
+  DOCUMENT
+}
+
+enum ResetPolicy {
+  YEARLY
+  CONTINUOUS
+}
+
+/// What business event produced a voucher. Every posting is traceable back to
+/// its source document — docs/03-accounting-standards.md rule 9.
+enum SourceType {
+  COMMISSION
+  COMMISSION_CLAIM
+  RECEIPT
+  STUDENT_INVOICE
+  CREDIT_NOTE
+  EXPENSE_BILL
+  PAYMENT
+  DEBIT_NOTE
+  INTERNAL_COMMISSION
+  TUITION_COLLECTION
+  TUITION_REMITTANCE
+  DEPRECIATION
+  FX_REVALUATION
+  PERIOD_CLOSE
+  OPENING
+  MANUAL
+}
+
+// ---------------------------------------------------------------------------
+// Chart of accounts
+// ---------------------------------------------------------------------------
+
+model Account {
+  id       String      @id @default(cuid())
+  code     String      @unique
+  name     String
+  type     AccountType
+  parentId String?
+
+  /// Group accounts are headings and accept no postings.
+  isGroup   Boolean @default(false)
+  /// Control accounts are posted to only via their subsidiary ledger, and every
+  /// line must carry a partyId. Manual JVs may not touch them.
+  isControl Boolean @default(false)
+  /// Contra accounts (accumulated depreciation, refunds & discounts, drawings)
+  /// carry the opposite normal balance and present as deductions.
+  isContra  Boolean @default(false)
+  /// Referenced by posting code via ACCOUNTS constants — cannot be deleted.
+  isSystem  Boolean @default(false)
+  isActive  Boolean @default(true)
+
+  /// Set only for accounts denominated in a single foreign currency.
+  currency String?
+
+  parent   Account?      @relation("AccountTree", fields: [parentId], references: [id])
+  children Account[]     @relation("AccountTree")
+  lines    JournalLine[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([parentId])
+  @@index([type, isActive])
+}
+
+// ---------------------------------------------------------------------------
+// Fiscal calendar — docs/08-period-close.md
+// ---------------------------------------------------------------------------
+
+model FiscalYear {
+  id        String           @id @default(cuid())
+  /// Display name, e.g. "FY2026-27"
+  name      String           @unique
+  /// Short code used in voucher numbers, e.g. "2627"
+  code      String           @unique
+  startDate DateTime         @db.Date
+  endDate   DateTime         @db.Date
+  status    FiscalYearStatus @default(OPEN)
+
+  periods AccountingPeriod[]
+  series  DocumentSeriesCounter[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model AccountingPeriod {
+  id           String       @id @default(cuid())
+  fiscalYearId String
+  name         String
+  /// 1..12 within the fiscal year
+  seq          Int
+  startDate    DateTime     @db.Date
+  endDate      DateTime     @db.Date
+  status       PeriodStatus @default(OPEN)
+
+  closedAt DateTime?
+  closedBy String?
+
+  fiscalYear FiscalYear     @relation(fields: [fiscalYearId], references: [id])
+  entries    JournalEntry[]
+
+  @@unique([fiscalYearId, seq])
+  @@index([startDate, endDate])
+}
+
+// ---------------------------------------------------------------------------
+// Analysis dimensions
+// ---------------------------------------------------------------------------
+
+model CostCenter {
+  id       String         @id @default(cuid())
+  code     String         @unique
+  name     String
+  type     CostCenterType
+  isActive Boolean        @default(true)
+
+  lines JournalLine[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([type, isActive])
+}
+
+// ---------------------------------------------------------------------------
+// Party — the subsidiary-ledger key. Every debtor and creditor is a Party, and
+// that is what makes control accounts reconcile.
+// ---------------------------------------------------------------------------
+
+model Party {
+  id   String    @id @default(cuid())
+  code String    @unique
+  name String
+  type PartyType
+
+  /// Which control account this party's balance rolls into (1110, 1120, 2010,
+  /// 2020, 2130).
+  controlAccountCode String
+  currency           String
+  isActive           Boolean @default(true)
+
+  lines JournalLine[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([type, isActive])
+  @@index([name])
+}
+
+// ---------------------------------------------------------------------------
+// Vouchers — the ledger itself
+// ---------------------------------------------------------------------------
+
+model JournalEntry {
+  id          String      @id @default(cuid())
+  voucherType VoucherType
+  /// TYPE-FY-SEQ, e.g. SI-2627-00042. Gapless per type per fiscal year.
+  voucherNo   String
+  entryDate   DateTime    @db.Date
+  narration   String
+
+  /// Transaction currency and the rate used to convert lines to base currency.
+  /// Lines themselves are always stored in base currency.
+  currency String
+  fxRate   Decimal @db.Decimal(18, 8)
+
+  sourceType SourceType
+  sourceId   String?
+
+  status   VoucherStatus @default(DRAFT)
+  periodId String
+
+  /// Set on the reversing entry, pointing at what it reverses.
+  reversesEntryId String?       @unique
+  reverses        JournalEntry? @relation("Reversal", fields: [reversesEntryId], references: [id])
+  reversedBy      JournalEntry? @relation("Reversal")
+
+  createdBy String
+  createdAt DateTime  @default(now())
+  postedAt  DateTime?
+
+  period AccountingPeriod @relation(fields: [periodId], references: [id])
+  lines  JournalLine[]
+
+  @@unique([voucherType, voucherNo])
+  @@index([entryDate])
+  @@index([sourceType, sourceId])
+  @@index([periodId, status])
+  @@index([status])
+}
+
+model JournalLine {
+  id        String @id @default(cuid())
+  entryId   String
+  /// Presentation order within the voucher.
+  seq       Int
+  accountId String
+
+  /// Exactly one of debit/credit is non-zero. Enforced in postEntry() and by a
+  /// CHECK constraint added in the migration (PSL cannot express it).
+  debit  Decimal @db.Decimal(18, 2)
+  credit Decimal @db.Decimal(18, 2)
+
+  /// Mandatory when the account is a control account; forbidden otherwise.
+  partyId       String?
+  /// Branch dimension — mandatory on postings, see docs/11-decisions.md C8.
+  costCenterId  String?
+  lineNarration String?
+
+  entry      JournalEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  account    Account      @relation(fields: [accountId], references: [id])
+  party      Party?       @relation(fields: [partyId], references: [id])
+  costCenter CostCenter?  @relation(fields: [costCenterId], references: [id])
+
+  reconciliationLines BankReconciliationLine[]
+
+  @@index([entryId])
+  @@index([accountId])
+  @@index([partyId])
+  @@index([costCenterId])
+}
+
+// ---------------------------------------------------------------------------
+// Gapless voucher numbering — docs/05-voucher-types.md
+// Allocated inside the posting transaction under a row lock. Never count(*)+1.
+// ---------------------------------------------------------------------------
+
+/// Configuration for one numbering series — prefix, padding and reset policy are
+/// editable by an admin. Covers both voucher types (SI, RV, JV...) and business
+/// documents (STU, APP, CLM, INV, EXP). docs/modules/16-settings.md
+model DocumentSeries {
+  key         String      @id
+  name        String
+  scope       SeriesScope
+  /// Editable. Takes effect on the next document; issued numbers never change.
+  prefix      String
+  padding     Int         @default(5)
+  resetPolicy ResetPolicy @default(YEARLY)
+  isActive    Boolean     @default(true)
+
+  counters DocumentSeriesCounter[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// The counter itself. Incremented under a row lock inside the posting
+/// transaction — never count(*) + 1. Not editable once a number has been issued.
+model DocumentSeriesCounter {
+  id           String @id @default(cuid())
+  seriesKey    String
+  fiscalYearId String
+  nextSeq      Int    @default(1)
+
+  series     DocumentSeries @relation(fields: [seriesKey], references: [key])
+  fiscalYear FiscalYear     @relation(fields: [fiscalYearId], references: [id])
+
+  @@unique([seriesKey, fiscalYearId])
+}
+
+// ---------------------------------------------------------------------------
+// Cash, bank and reconciliation
+// ---------------------------------------------------------------------------
+
+model BankAccount {
+  id        String  @id @default(cuid())
+  name      String
+  accountNo String?
+  bankName  String?
+  currency  String
+
+  /// Sub-account under 1020 that this bank account posts to.
+  glAccountCode  String
+  openingBalance Decimal @default(0) @db.Decimal(18, 2)
+
+  /// Client-money account for pass-through tuition — must not be mixed with
+  /// operating funds. docs/modules/13-tuition-remittance.md
+  isClientAccount Boolean @default(false)
+  isActive        Boolean @default(true)
+
+  reconciliations BankReconciliation[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model BankReconciliation {
+  id               String   @id @default(cuid())
+  bankAccountId    String
+  statementDate    DateTime @db.Date
+  statementBalance Decimal  @db.Decimal(18, 2)
+
+  /// Difference must be zero before the reconciliation can be closed.
+  difference   Decimal   @default(0) @db.Decimal(18, 2)
+  reconciledOn DateTime?
+  reconciledBy String?
+  isClosed     Boolean   @default(false)
+
+  bankAccount BankAccount              @relation(fields: [bankAccountId], references: [id])
+  lines       BankReconciliationLine[]
+
+  createdAt DateTime @default(now())
+
+  @@unique([bankAccountId, statementDate])
+}
+
+model BankReconciliationLine {
+  id               String  @id @default(cuid())
+  reconciliationId String
+  journalLineId    String
+  matched          Boolean @default(false)
+  statementRef     String?
+
+  reconciliation BankReconciliation @relation(fields: [reconciliationId], references: [id], onDelete: Cascade)
+  journalLine    JournalLine        @relation(fields: [journalLineId], references: [id])
+
+  @@unique([reconciliationId, journalLineId])
+  @@index([journalLineId])
+}
+
+// ---------------------------------------------------------------------------
+// Currency and tax — docs/07-multi-currency-and-tax.md
+// Rates are configuration, never constants in code.
+// ---------------------------------------------------------------------------
+
+model Currency {
+  code     String  @id
+  name     String
+  symbol   String
+  decimals Int     @default(2)
+  /// Exactly one currency is the base. Locked once any voucher is posted.
+  isBase   Boolean @default(false)
+  isActive Boolean @default(true)
+
+  ratesFrom ExchangeRate[] @relation("RateFrom")
+  ratesTo   ExchangeRate[] @relation("RateTo")
+}
+
+model ExchangeRate {
+  id           String   @id @default(cuid())
+  fromCurrency String
+  toCurrency   String
+  rateDate     DateTime @db.Date
+  rate         Decimal  @db.Decimal(18, 8)
+  /// Where the rate came from: MANUAL, BANK, API provider name.
+  source       String   @default("MANUAL")
+
+  from Currency @relation("RateFrom", fields: [fromCurrency], references: [code])
+  to   Currency @relation("RateTo", fields: [toCurrency], references: [code])
+
+  createdAt DateTime @default(now())
+  createdBy String?
+
+  @@unique([fromCurrency, toCurrency, rateDate])
+  @@index([rateDate])
+}
+
+/// Effective-dated: a rate change creates a NEW row and closes the previous one.
+/// Rates are always resolved by document date, never by today's value, so a
+/// reprint of an old invoice shows the tax that actually applied to it.
+model TaxCode {
+  id            String  @id @default(cuid())
+  code          String
+  name          String
+  kind          TaxKind
+  /// Withholding rates may differ by country. Resolution order:
+  /// university -> country -> tax.withholdingDefaultRate setting.
+  country       String?
+  /// Percentage, e.g. 15.0000
+  rate          Decimal @db.Decimal(9, 4)
+  glAccountCode String
+
+  effectiveFrom DateTime  @db.Date
+  effectiveTo   DateTime? @db.Date
+  isActive      Boolean   @default(true)
+
+  createdAt DateTime @default(now())
+  createdBy String?
+
+  @@unique([code, effectiveFrom])
+  @@index([code, effectiveFrom, effectiveTo])
+  @@index([kind, country])
+}
+
+// ---------------------------------------------------------------------------
+// Settings — fiscal year start, VAT rate, thresholds. docs/11-decisions.md C2–C4
+// ---------------------------------------------------------------------------
+
+model Setting {
+  key      String          @id
+  section  SettingSection
+  /// Always stored as text; `dataType` tells the UI and the typed accessors how
+  /// to parse it.
+  value    String
+  dataType SettingDataType
+
+  /// Computed and cached — a locked setting was fixed by the first posting that
+  /// depended on it. Never hand-set. docs/modules/16-settings.md rule 2.
+  isLocked   Boolean @default(false)
+  lockReason String?
+
+  updatedAt DateTime @updatedAt
+  updatedBy String?
+
+  history SettingHistory[]
+
+  @@index([section])
+}
+
+/// Dated values for settings that affect posted documents, plus the audit trail
+/// for every settings change. Resolution: the row where
+/// effectiveFrom <= documentDate AND (effectiveTo IS NULL OR effectiveTo > documentDate).
+model SettingHistory {
+  id            String    @id @default(cuid())
+  key           String
+  value         String
+  effectiveFrom DateTime  @db.Date
+  effectiveTo   DateTime? @db.Date
+
+  changedBy String
+  changedAt DateTime @default(now())
+  note      String?
+
+  setting Setting @relation(fields: [key], references: [key], onDelete: Cascade)
+
+  @@unique([key, effectiveFrom])
+  @@index([key, effectiveFrom, effectiveTo])
+}

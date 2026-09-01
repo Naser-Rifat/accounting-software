@@ -1,0 +1,58 @@
+// ---------------------------------------------------------------------------
+// AUTH — users, roles and sessions
+//
+// Server-side sessions rather than stateless tokens: an accounting system needs
+// to be able to revoke access immediately, and to answer "who was logged in when
+// this voucher was posted".
+// ---------------------------------------------------------------------------
+
+enum UserRole {
+  ADMIN
+  ACCOUNTANT
+  COUNSELOR
+  AGENT
+  VIEWER
+}
+
+model User {
+  id           String   @id @default(cuid())
+  /// Login ID. Case-insensitive by convention — always stored lowercase.
+  username     String   @unique
+  email        String?  @unique
+  name         String
+  /// scrypt: <salt>:<derivedKey>, both hex. Never a plaintext or reversible value.
+  passwordHash String
+  role         UserRole @default(VIEWER)
+  isActive     Boolean  @default(true)
+
+  /// Forces a password change on next login — set for seeded accounts.
+  mustChangePassword Boolean   @default(false)
+  lastLoginAt        DateTime?
+
+  sessions Session[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive])
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  /// SHA-256 of the cookie value. The raw token is never stored, so a database
+  /// leak does not hand over live sessions.
+  tokenHash String   @unique
+  userId    String
+  expiresAt DateTime
+
+  ipAddress String?
+  userAgent String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt    DateTime @default(now())
+  lastActiveAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+}

@@ -1,0 +1,133 @@
+// ---------------------------------------------------------------------------
+// FIXED ASSETS & DEPRECIATION
+//
+// An asset sub-ledger: the register holds the detail, the GL holds the totals.
+// Cost sits in 15xx, accumulated depreciation in 1590 (contra), the monthly
+// charge in 6130, and any gain or loss on disposal in 7300.
+//
+// Net book value is never stored — it is cost less the depreciation actually
+// posted, so the register can never drift from the ledger.
+// ---------------------------------------------------------------------------
+
+enum DepreciationMethod {
+  STRAIGHT_LINE
+  REDUCING_BALANCE
+  /// Land and similar non-depreciating assets.
+  NONE
+}
+
+enum AssetStatus {
+  ACTIVE
+  FULLY_DEPRECIATED
+  DISPOSED
+  WRITTEN_OFF
+}
+
+enum DisposalType {
+  SALE
+  SCRAP
+  WRITE_OFF
+}
+
+/// Groups assets and decides which accounts they post to, so the mapping is
+/// data rather than code.
+model AssetCategory {
+  id   String @id @default(cuid())
+  code String @unique
+  name String
+
+  /// Where cost sits, where accumulated depreciation sits, where the charge goes.
+  assetAccountCode       String
+  accumulatedAccountCode String
+  expenseAccountCode     String
+
+  defaultMethod           DepreciationMethod @default(STRAIGHT_LINE)
+  defaultUsefulLifeMonths Int                @default(36)
+  /// Annual percentage, used only by REDUCING_BALANCE.
+  defaultReducingRate     Decimal?           @db.Decimal(9, 4)
+
+  isActive Boolean @default(true)
+  assets   Asset[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Asset {
+  id   String @id @default(cuid())
+  code String @unique
+  name String
+
+  description     String?
+  categoryId      String
+  /// Branch or other dimension the charge is analysed to.
+  costCenterId    String?
+  /// Vendor the asset was bought from, when known.
+  supplierPartyId String?
+
+  acquiredOn   DateTime @db.Date
+  cost         Decimal  @db.Decimal(18, 2)
+  /// Residual value the asset is never depreciated below.
+  salvageValue Decimal  @default(0) @db.Decimal(18, 2)
+
+  method              DepreciationMethod
+  usefulLifeMonths    Int
+  reducingRate        Decimal?           @db.Decimal(9, 4)
+  /// First month the charge runs. Usually the acquisition month.
+  depreciationStartOn DateTime           @db.Date
+
+  status AssetStatus @default(ACTIVE)
+
+  disposedOn       DateTime?     @db.Date
+  disposalType     DisposalType?
+  disposalProceeds Decimal?      @db.Decimal(18, 2)
+  /// Voucher that recorded the disposal.
+  disposalEntryId  String?
+
+  category AssetCategory       @relation(fields: [categoryId], references: [id])
+  entries  DepreciationEntry[]
+
+  createdBy String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([categoryId])
+}
+
+/// One depreciation run per period. Posts a single JV for every asset it covers.
+model DepreciationRun {
+  id       String   @id @default(cuid())
+  periodId String   @unique
+  runDate  DateTime @db.Date
+
+  totalAmount    Decimal @db.Decimal(18, 2)
+  assetCount     Int
+  /// The voucher this run posted.
+  journalEntryId String?
+  voucherNo      String?
+
+  entries DepreciationEntry[]
+
+  createdBy String
+  createdAt DateTime @default(now())
+}
+
+model DepreciationEntry {
+  id       String @id @default(cuid())
+  runId    String
+  assetId  String
+  periodId String
+
+  amount     Decimal @db.Decimal(18, 2)
+  openingNbv Decimal @db.Decimal(18, 2)
+  closingNbv Decimal @db.Decimal(18, 2)
+
+  run   DepreciationRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  asset Asset           @relation(fields: [assetId], references: [id])
+
+  /// An asset can be depreciated at most once in any period. This is the guard
+  /// that makes a re-run safe.
+  @@unique([assetId, periodId])
+  @@index([runId])
+}

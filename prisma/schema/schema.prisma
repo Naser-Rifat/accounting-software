@@ -1,0 +1,19 @@
+// Datasource and generator. Models live in the sibling .prisma files, which
+// Prisma merges automatically (multi-file schema).
+//
+// Conventions enforced across every model file:
+//   money        Decimal @db.Decimal(18, 2)
+//   fx rate      Decimal @db.Decimal(18, 8)
+//   percentage   Decimal @db.Decimal(9, 4)
+// Never Float for anything financial.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../../src/generated/prisma"
+}
+
+// Prisma 7: the connection URL no longer lives here. Migrate reads it from
+// prisma.config.ts, and PrismaClient takes a driver adapter at construction.
+datasource db {
+  provider = "postgresql"
+}
