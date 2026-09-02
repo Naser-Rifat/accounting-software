@@ -32,6 +32,8 @@ export type AccountingErrorCode =
   | 'MISSING_EXCHANGE_RATE'
   | 'MISSING_COST_CENTER'
   | 'SERIES_NOT_CONFIGURED'
+  | 'DUPLICATE_ACCOUNT_CODE'
+  | 'INVALID_ACCOUNT_PARENT'
 
 export class AccountingError extends Error {
   readonly code: AccountingErrorCode

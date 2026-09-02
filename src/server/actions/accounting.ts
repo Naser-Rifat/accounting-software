@@ -11,6 +11,7 @@ import {
   canReopenPeriod,
 } from '@/server/auth/authorize'
 import { requireUser } from '@/server/auth/session'
+import { createLedgerAccount } from '@/server/services/accounts-service'
 import { closeFiscalYear, setPeriodStatus } from '@/server/services/period-service'
 import {
   createBankAccount,
@@ -18,7 +19,7 @@ import {
   postOpeningBalances,
   postTransfer,
 } from '@/server/services/setup-service'
-import type { CostCenterType, PeriodStatus } from '@/generated/prisma/enums'
+import type { AccountType, CostCenterType, PeriodStatus } from '@/generated/prisma/enums'
 
 export type ActionState = { error?: string; message?: string }
 
@@ -190,5 +191,47 @@ export async function submitOpeningBalances(
     return { message: `Posted ${result.voucherNo}. Any imbalance went to 9100.` }
   } catch (error) {
     return fail(error, 'Could not post the opening balances.')
+  }
+}
+
+/**
+ * Add an account to the chart of accounts.
+ *
+ * Thin controller: the shape rules that keep the chart coherent live in the
+ * service, so this only authorizes and forwards.
+ */
+export async function addLedgerAccount(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const user = await requireUser()
+  if (!canManageChartOfAccounts(user.role)) {
+    return { error: 'Your role cannot change the chart of accounts.' }
+  }
+
+  const code = String(formData.get('code') ?? '').trim()
+  const name = String(formData.get('name') ?? '').trim()
+  const type = String(formData.get('type') ?? '') as AccountType
+  const parentCode = String(formData.get('parentCode') ?? '').trim()
+  const isGroup = String(formData.get('isGroup') ?? '') === 'on'
+
+  if (!code || !name) return { error: 'Code and name are required.' }
+  if (!type) return { error: 'Choose an account type.' }
+
+  try {
+    await createLedgerAccount({
+      code,
+      name,
+      type,
+      parentCode: parentCode || null,
+      isGroup,
+    })
+  } catch (error) {
+    return fail(error, 'Could not create the account.')
+  }
+
+  revalidatePath('/accounting/accounts')
+  return {
+    message: `${code} ${name} added${isGroup ? ' as a heading' : ''}.`,
   }
 }
