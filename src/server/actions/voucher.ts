@@ -21,6 +21,7 @@ import {
   approveVoucher,
   rejectVoucher,
   reverseVoucher,
+  saveManualVoucherDraft,
   submitManualVoucher,
 } from '@/server/services/voucher-service'
 
@@ -57,9 +58,14 @@ export async function createJournalVoucher(
     return { error: parsed.error.issues[0]?.message ?? 'Check the entries and try again.' }
   }
 
+  // Which button was pressed. A draft is parked for the maker; a submission
+  // goes to the review queue for someone else to post.
+  const asDraft = String(formData.get('intent') ?? '') === 'draft'
+  const save = asDraft ? saveManualVoucherDraft : submitManualVoucher
+
   let voucherId: string
   try {
-    const result = await submitManualVoucher({
+    const result = await save({
       entryDate: new Date(`${parsed.data.entryDate}T00:00:00.000Z`),
       narration: parsed.data.narration,
       createdBy: user.username,
@@ -77,7 +83,11 @@ export async function createJournalVoucher(
     // voucher; anything else is a genuine fault and must not leak internals.
     if (isAccountingError(error)) return { error: error.message }
     console.error('createJournalVoucher failed', error)
-    return { error: 'Could not submit the voucher. Please try again.' }
+    return {
+      error: asDraft
+        ? 'Could not save the draft. Please try again.'
+        : 'Could not submit the voucher. Please try again.',
+    }
   }
 
   revalidatePath('/accounting')

@@ -36,24 +36,56 @@ function whereFrom(filters: VoucherFilters) {
   }
 }
 
+/**
+ * Vouchers awaiting approval come first, then everything else newest-first.
+ *
+ * A pending voucher is the only row on this screen that someone has to act on,
+ * and sorting purely by date buries it among hundreds of posted ones. Ordering
+ * has to happen in the query rather than on the fetched page, or a voucher
+ * sitting outside the first 50 rows would never surface.
+ *
+ * Two queries sharing one `where` rather than raw SQL with a CASE: it keeps
+ * `whereFrom` the single definition of what the filters mean. When the caller
+ * filters by a specific status the two halves still behave — one side returns
+ * nothing and the other returns the lot.
+ *
+ * Within the pending group the oldest is first, matching the review queue: a
+ * voucher that has waited longest is the most urgent, not the least.
+ */
 export async function listVouchers(filters: VoucherFilters) {
   const where = whereFrom(filters)
+  const take = filters.take ?? 50
+  const skip = filters.skip ?? 0
 
-  const [rows, total] = await Promise.all([
+  const include = {
+    lines: { select: { debit: true } },
+    period: { select: { name: true } },
+  }
+
+  const [pending, total] = await Promise.all([
     prisma.journalEntry.findMany({
-      where,
-      orderBy: [{ entryDate: 'desc' }, { createdAt: 'desc' }],
-      take: filters.take ?? 50,
-      skip: filters.skip ?? 0,
-      include: {
-        lines: { select: { debit: true } },
-        period: { select: { name: true } },
-      },
+      where: { ...where, status: 'PENDING_APPROVAL' },
+      orderBy: [{ entryDate: 'asc' }, { createdAt: 'asc' }],
+      take,
+      skip,
+      include,
     }),
     prisma.journalEntry.count({ where }),
   ])
 
-  return { rows, total }
+  const remaining = take - pending.length
+  const rest =
+    remaining > 0
+      ? await prisma.journalEntry.findMany({
+          where: { ...where, status: { not: 'PENDING_APPROVAL' } },
+          orderBy: [{ entryDate: 'desc' }, { createdAt: 'desc' }],
+          take: remaining,
+          skip: Math.max(skip - pending.length, 0),
+          include,
+        })
+      : []
+
+  return { rows: [...pending, ...rest], total }
 }
 
 export async function findVoucher(id: string) {

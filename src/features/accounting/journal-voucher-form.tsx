@@ -34,6 +34,29 @@ const TYPE_LABEL: Record<string, string> = {
   EXPENSE: 'Expenses',
 }
 
+/**
+ * Voucher types, and which screen raises each.
+ *
+ * docs/05-voucher-types.md pairs every type with a source document: an SI comes
+ * from a commission claim, a PV from a vendor payment. Letting this form mint
+ * one would produce a voucher with sourceType MANUAL and no document behind it,
+ * which breaks the subledger reconciliation that control accounts depend on.
+ * They are listed rather than hidden so it is clear where each one does come
+ * from.
+ */
+const VOUCHER_TYPES = [
+  { code: 'JV', label: 'Journal Voucher — accruals, corrections, adjustments', manual: true },
+  { code: 'SI', label: 'Sales Invoice — raised by a commission claim or student invoice', manual: false },
+  { code: 'CN', label: 'Credit Note — raised by a refund or commission reduction', manual: false },
+  { code: 'PB', label: 'Purchase Bill — raised by a vendor bill', manual: false },
+  { code: 'DN', label: 'Debit Note — raised by a debit note against a bill', manual: false },
+  { code: 'RV', label: 'Receipt Voucher — raised by a receipt', manual: false },
+  { code: 'PV', label: 'Payment Voucher — raised by a payment', manual: false },
+  { code: 'CV', label: 'Contra Voucher — raised by Banking → Contra / Transfers', manual: false },
+  { code: 'OB', label: 'Opening Balance — raised by Period → Opening Balances', manual: false },
+  { code: 'CL', label: 'Closing — raised by Period → Year-End Close', manual: false },
+]
+
 function money(n: number) {
   return new Intl.NumberFormat('en-IN', {
     minimumFractionDigits: 2,
@@ -52,6 +75,7 @@ export function JournalVoucherForm({
   const [lines, setLines] = useState<Line[]>([{ ...emptyLine }, { ...emptyLine }])
   const [entryDate, setEntryDate] = useState(today)
   const [narration, setNarration] = useState('')
+  const [intent, setIntent] = useState<'draft' | 'submit' | null>(null)
 
   // Grouped into optgroups so a 70-account chart is scannable, instead of one
   // flat list you have to know the code to find.
@@ -115,6 +139,13 @@ export function JournalVoucherForm({
     setLines((prev) => [...prev, { ...emptyLine }])
   }
 
+  function clearForm() {
+    setLines([{ ...emptyLine }, { ...emptyLine }])
+    setNarration('')
+    setEntryDate(today)
+    setIntent(null)
+  }
+
   const payload = JSON.stringify({
     entryDate,
     narration,
@@ -130,9 +161,47 @@ export function JournalVoucherForm({
     <form action={formAction} className="space-y-6">
       <input type="hidden" name="payload" value={payload} />
 
-      <div className="grid gap-4 sm:grid-cols-[200px_1fr]">
+      <div className="grid gap-4 sm:grid-cols-3">
         <div className="space-y-2">
-          <Label htmlFor="entryDate">Date</Label>
+          <Label htmlFor="voucherType">
+            Voucher Type <span className="text-destructive">*</span>
+          </Label>
+          <select
+            id="voucherType"
+            defaultValue="JV"
+            className="h-9 w-full rounded-md border bg-transparent px-2 text-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+          >
+            {VOUCHER_TYPES.map((type) => (
+              <option key={type.code} value={type.code} disabled={!type.manual}>
+                {type.code} — {type.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="voucherNo">
+            Transaction No <span className="text-muted-foreground">· auto</span>
+          </Label>
+          <Input
+            id="voucherNo"
+            readOnly
+            value="(auto on approval)"
+            className="bg-muted text-muted-foreground"
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="txnDate">
+            Transaction Date <span className="text-muted-foreground">· server</span>
+          </Label>
+          <Input id="txnDate" readOnly value={today} className="bg-muted text-muted-foreground" />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="entryDate">
+            Value / Application Date <span className="text-destructive">*</span>
+          </Label>
           <Input
             id="entryDate"
             type="date"
@@ -141,29 +210,35 @@ export function JournalVoucherForm({
             required
           />
         </div>
-        <div className="space-y-2">
-          <Label htmlFor="narration">Narration</Label>
+
+        <div className="space-y-2 sm:col-span-2">
+          <Label htmlFor="narration">
+            General Particulars <span className="text-destructive">*</span>
+          </Label>
           <Input
             id="narration"
             value={narration}
             onChange={(e) => setNarration(e.target.value)}
-            placeholder="What is this voucher for?"
+            placeholder="Narration for the whole voucher"
             required
           />
         </div>
       </div>
+
+      <p className="text-sm font-medium">Voucher Details</p>
 
       <div className="overflow-x-auto rounded-md border">
         <table className="w-full text-sm">
           <thead className="border-b bg-muted/40">
             <tr>
               <th className="w-10 px-3 py-2 text-left font-medium text-muted-foreground">
-                #
+                SL
               </th>
-              <th className="px-3 py-2 text-left font-medium">Account</th>
-              <th className="px-3 py-2 text-left font-medium">Line narration</th>
-              <th className="w-36 px-3 py-2 text-right font-medium">Debit</th>
-              <th className="w-36 px-3 py-2 text-right font-medium">Credit</th>
+              <th className="px-3 py-2 text-left font-medium">Account No.</th>
+              <th className="px-3 py-2 text-left font-medium">Account Name</th>
+              <th className="w-32 px-3 py-2 text-right font-medium">Dr. Amount</th>
+              <th className="w-32 px-3 py-2 text-right font-medium">Cr. Amount</th>
+              <th className="px-3 py-2 text-left font-medium">Particulars</th>
               <th className="w-10" />
             </tr>
           </thead>
@@ -197,13 +272,8 @@ export function JournalVoucherForm({
                     ))}
                   </select>
                 </td>
-                <td className="px-3 py-2">
-                  <Input
-                    value={line.lineNarration}
-                    onChange={(e) => update(index, { lineNarration: e.target.value })}
-                    aria-label={`Narration for line ${index + 1}`}
-                    placeholder="Optional"
-                  />
+                <td className="px-3 py-2 text-sm text-muted-foreground">
+                  {accounts.find((a) => a.code === line.accountCode)?.name ?? ''}
                 </td>
                 <td className="px-3 py-2">
                   <Input
@@ -231,6 +301,14 @@ export function JournalVoucherForm({
                       }
                     }}
                     placeholder="0.00"
+                  />
+                </td>
+                <td className="px-3 py-2">
+                  <Input
+                    value={line.lineNarration}
+                    onChange={(e) => update(index, { lineNarration: e.target.value })}
+                    aria-label={`Particulars for line ${index + 1}`}
+                    placeholder="Optional"
                   />
                 </td>
                 <td className="px-2 py-2 text-center">
@@ -267,7 +345,7 @@ export function JournalVoucherForm({
               >
                 {money(totals.credit)}
               </td>
-              <td />
+              <td colSpan={2} />
             </tr>
             {!touched || balanced ? null : (
               <tr className="border-t">
@@ -283,7 +361,7 @@ export function JournalVoucherForm({
                     ? ''
                     : `(${totals.difference > 0 ? 'credit' : 'debit'} short)`}
                 </td>
-                <td />
+                <td colSpan={2} />
               </tr>
             )}
           </tfoot>
@@ -317,20 +395,48 @@ export function JournalVoucherForm({
         </p>
       ) : null}
 
-      <div className="flex flex-wrap items-center gap-3">
-        <Button type="submit" disabled={pending || !ready}>
-          {pending ? 'Submitting…' : 'Submit for approval'}
+      <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4">
+        <Button type="button" variant="ghost" onClick={clearForm} disabled={pending}>
+          Clear
         </Button>
-        {blocker ? (
-          <p className="text-sm text-muted-foreground">{blocker}</p>
-        ) : null}
+
+        <div className="flex flex-wrap items-center justify-end gap-3">
+          {blocker ? (
+            <p className="text-sm text-muted-foreground">{blocker}</p>
+          ) : null}
+
+          {/* Both buttons submit the same form; the name/value tells the action
+              which one was pressed, so one useActionState still owns the result. */}
+          <Button
+            type="submit"
+            name="intent"
+            value="draft"
+            variant="outline"
+            onClick={() => setIntent('draft')}
+            disabled={pending || !ready}
+          >
+            {pending && intent === 'draft' ? 'Saving…' : 'Save as Draft'}
+          </Button>
+
+          <Button
+            type="submit"
+            name="intent"
+            value="submit"
+            onClick={() => setIntent('submit')}
+            disabled={pending || !ready}
+          >
+            {pending && intent === 'submit' ? 'Submitting…' : 'Save (Unposted)'}
+          </Button>
+        </div>
       </div>
 
       <p className="rounded-md border border-brand-soft bg-brand-tint px-3 py-2 text-xs text-brand-strong">
-        This does not post to the ledger yet. The voucher goes to{' '}
-        <strong>Voucher Review &amp; Posting</strong>, where a different person approves
-        it — you cannot approve your own. Until then it changes no balance and appears in
-        no report. Once approved it is final and can only be corrected by reversal.
+        Neither button posts to the ledger. <strong>Save as Draft</strong> parks the
+        voucher for you to finish later; <strong>Save (Unposted)</strong> sends it to{' '}
+        <strong>Voucher Review &amp; Posting</strong>, where a different person approves it
+        — you cannot approve your own. Until it is approved it moves no balance and appears
+        in no report. Both still have to balance: an unbalanced voucher cannot be stored at
+        all, draft or not.
       </p>
     </form>
   )

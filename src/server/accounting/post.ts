@@ -21,7 +21,7 @@ import type { PrismaTransaction } from '@/server/db/client'
  * validation, control-account rules, currency conversion, balance proof, gapless
  * numbering, and the DRAFT -> POSTED flip that the immutability triggers expect.
  *
- * With `submitForApproval`, that flip stops at PENDING_APPROVAL instead. The
+ * With `stopAt`, that flip stops at DRAFT or PENDING_APPROVAL instead. The
  * voucher is fully validated, numbered and frozen, but invisible to every
  * report — they all filter on status IN ('POSTED','REVERSED') — until a second
  * person approves it through `approveEntry`.
@@ -58,12 +58,18 @@ export type PostEntryInput = {
   /** ACCOUNTANT/ADMIN may post into a soft-closed period. */
   canPostToSoftClosed?: boolean
   /**
-   * Stop at PENDING_APPROVAL rather than POSTED, so a different person must
-   * approve the voucher before it reaches the ledger. Used for hand-entered
-   * vouchers; postings driven by an already-approved source document (a bill,
-   * a depreciation run) skip the queue because their control sits upstream.
+   * Stop short of POSTED.
+   *
+   * 'DRAFT' parks a voucher the maker is still working on; 'PENDING_APPROVAL'
+   * hands it to a second person to approve. Omitted, the entry posts straight
+   * away — which is what source-document postings (a bill, a depreciation run)
+   * do, because their control sits upstream on the document.
+   *
+   * Even a draft must balance: the deferred journal_line_balanced trigger fires
+   * at COMMIT regardless of status, so an unbalanced voucher cannot be stored
+   * at all.
    */
-  submitForApproval?: boolean
+  stopAt?: 'DRAFT' | 'PENDING_APPROVAL'
 }
 
 export type PostedEntry = {
@@ -267,9 +273,12 @@ export async function postEntry(
   const now = new Date()
   await tx.journalEntry.update({
     where: { id: entry.id },
-    data: input.submitForApproval
-      ? { status: 'PENDING_APPROVAL', submittedBy: input.createdBy, submittedAt: now }
-      : { status: 'POSTED', postedAt: now },
+    data:
+      input.stopAt === 'DRAFT'
+        ? { status: 'DRAFT' }
+        : input.stopAt === 'PENDING_APPROVAL'
+          ? { status: 'PENDING_APPROVAL', submittedBy: input.createdBy, submittedAt: now }
+          : { status: 'POSTED', postedAt: now },
   })
 
   return {

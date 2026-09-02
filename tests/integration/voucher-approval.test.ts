@@ -35,7 +35,7 @@ async function submit(narration: string, createdBy = MAKER) {
       fxRate: 1,
       createdBy,
       isManual: true,
-      submitForApproval: true,
+      stopAt: 'PENDING_APPROVAL',
       lines: LINES,
     }),
   )
