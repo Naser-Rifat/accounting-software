@@ -94,8 +94,37 @@ Posts against liability 2130, never against an income account.
 
 ## Voucher status
 
-`DRAFT -> POSTED -> REVERSED`. Only DRAFT is editable or deletable.
-See [05-voucher-types.md](05-voucher-types.md).
+```
+DRAFT -> PENDING_APPROVAL -> POSTED -> REVERSED
+      <-  (rejected)
+```
+
+Only DRAFT is editable or deletable. A PENDING_APPROVAL voucher is frozen — its
+header and its lines both — and invisible to every report, which filter on
+`POSTED`/`REVERSED`.
+
+| Status | Set when | Who |
+|---|---|---|
+| DRAFT | Being prepared, or sent back for correction | Maker |
+| PENDING_APPROVAL | Submitted for review | Maker |
+| POSTED | Approved — now in the ledger | Checker, never the maker |
+| REVERSED | Cancelled by a mirror-image entry | Checker |
+
+**Maker-checker.** A hand-entered journal voucher never reaches the ledger on one
+person's say-so: whoever submitted it may not approve it. The refusal lives in
+`approveEntry()` *and* in a database trigger, because a control enforced in only
+one layer is one a future code path can forget. This needs at least two users who
+can approve — a single-user install cannot post a manual JV.
+
+Rejection returns the voucher to DRAFT with the reviewer and reason recorded,
+rather than to a status of its own: DRAFT is the only state in which the
+immutability triggers let the lines be corrected, and correcting them is the
+point of a rejection. It keeps its number (rule 6 — numbers are never reused).
+
+Postings generated from an already-approved source document (an approved expense
+bill, a depreciation run) skip the queue: their control sits on the source
+document, and re-reviewing the derived entry would be approving the same decision
+twice. See [05-voucher-types.md](05-voucher-types.md).
 
 ## Period status
 

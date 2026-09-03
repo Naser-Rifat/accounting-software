@@ -31,3 +31,14 @@ export function canReopenPeriod(role: UserRole): boolean {
 export function canManageChartOfAccounts(role: UserRole): boolean {
   return role === 'ADMIN' || role === 'ACCOUNTANT'
 }
+
+/**
+ * Who may approve a submitted voucher into the ledger.
+ *
+ * Being allowed to approve is not the same as being allowed to approve *this*
+ * voucher: the engine separately refuses anyone approving their own submission,
+ * and that check is the one that actually implements maker-checker.
+ */
+export function canApproveVoucher(role: UserRole): boolean {
+  return role === 'ADMIN' || role === 'ACCOUNTANT'
+}

@@ -24,12 +24,16 @@ export type AccountingErrorCode =
   | 'FISCAL_YEAR_CLOSED'
   | 'BACKDATING_NOT_ALLOWED'
   | 'ALREADY_POSTED'
+  | 'NOT_PENDING_APPROVAL'
+  | 'SELF_APPROVAL'
   | 'NOT_POSTED'
   | 'ALREADY_REVERSED'
   | 'IMMUTABLE_VOUCHER'
   | 'MISSING_EXCHANGE_RATE'
   | 'MISSING_COST_CENTER'
   | 'SERIES_NOT_CONFIGURED'
+  | 'DUPLICATE_ACCOUNT_CODE'
+  | 'INVALID_ACCOUNT_PARENT'
 
 export class AccountingError extends Error {
   readonly code: AccountingErrorCode

@@ -22,7 +22,7 @@ export default async function NewVoucherPage() {
     <PageShell
       user={user}
       title="New journal voucher"
-      subtitle="Manual entry — accruals, corrections and adjustments"
+      subtitle="Manual entry — goes to review, then a second person posts it"
     >
       <Card>
         <CardContent className="pt-6">

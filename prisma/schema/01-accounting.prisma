@@ -31,6 +31,7 @@ enum VoucherType {
 
 enum VoucherStatus {
   DRAFT
+  PENDING_APPROVAL
   POSTED
   REVERSED
 }
@@ -243,7 +244,10 @@ model Party {
   currency           String
   isActive           Boolean @default(true)
 
-  lines JournalLine[]
+  lines      JournalLine[]
+  bills      ExpenseBill[]
+  payments   Payment[]
+  debitNotes DebitNote[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -283,6 +287,17 @@ model JournalEntry {
   createdBy String
   createdAt DateTime  @default(now())
   postedAt  DateTime?
+
+  /// Maker-checker trail — docs/02-status-flows.md. A manual voucher is created
+  /// PENDING_APPROVAL; only a different user may approve it into POSTED. A
+  /// rejection sends it back to DRAFT with the reason, keeping its number.
+  submittedBy     String?
+  submittedAt     DateTime?
+  approvedBy      String?
+  approvedAt      DateTime?
+  rejectedBy      String?
+  rejectedAt      DateTime?
+  rejectionReason String?
 
   period AccountingPeriod @relation(fields: [periodId], references: [id])
   lines  JournalLine[]

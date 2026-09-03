@@ -31,6 +31,7 @@ export const ACCOUNTING_NAV: NavGroup[] = [
       { label: 'Chart of Accounts', href: '/accounting/accounts' },
       { label: 'Vouchers', href: '/accounting/vouchers' },
       { label: 'Journal Voucher', href: '/accounting/vouchers/new' },
+      { label: 'Voucher Review & Posting', href: '/accounting/vouchers/review' },
       { label: 'General Ledger', href: '/accounting/ledger' },
       { label: 'Party Ledger', href: '/accounting/party-ledger' },
       { label: 'Trial Balance', href: '/accounting/trial-balance' },
@@ -43,6 +44,8 @@ export const ACCOUNTING_NAV: NavGroup[] = [
       { label: 'Profit & Loss', href: '/accounting/reports/profit-loss' },
       { label: 'Balance Sheet', href: '/accounting/reports/balance-sheet' },
       { label: 'Cash Flow', href: '/accounting/reports/cash-flow' },
+      { label: 'Cash & Bank Book', href: '/accounting/reports/cash-bank-book' },
+      { label: 'Receipts & Payments', href: '/accounting/reports/receipts-payments' },
       { label: 'Day Book', href: '/accounting/reports/day-book' },
       { label: 'VAT Summary', href: '/accounting/reports/vat' },
       { label: 'Withholding Tax', href: '/accounting/reports/withholding' },
@@ -156,6 +159,7 @@ export const NAV: NavGroup[] = [
     items: [
       { label: 'Chart of Accounts', href: '/accounting/accounts' },
       { label: 'Vouchers', href: '/accounting/vouchers' },
+      { label: 'Voucher Review & Posting', href: '/accounting/vouchers/review' },
       { label: 'General Ledger', href: '/accounting/ledger' },
       { label: 'Party Ledger', href: '/accounting/party-ledger' },
       { label: 'Trial Balance', href: '/accounting/trial-balance' },
@@ -186,6 +190,33 @@ export const NAV: NavGroup[] = [
       { label: 'Fiscal Years', href: '/admin/fiscal-years' },
       { label: 'Audit Logs', href: '/admin/audit' },
       { label: 'Settings', href: '/admin/settings' },
+    ],
+  },
+]
+
+/** Sidebar for the Purchases & Payments module. */
+export const PURCHASES_NAV: NavGroup[] = [
+  {
+    label: 'Purchases',
+    items: [
+      { label: 'Expense Bills', href: '/purchases/bills' },
+      { label: 'Payments', href: '/purchases/payments' },
+      { label: 'Debit Notes', href: '/purchases/debit-notes' },
+    ],
+  },
+  {
+    label: 'Vendors',
+    items: [
+      { label: 'Vendors', href: '/purchases/vendors' },
+      { label: 'Payables Aging', href: '/purchases/aging' },
+    ],
+  },
+  {
+    label: 'Accounting',
+    items: [
+      { label: 'Vouchers', href: '/accounting/vouchers' },
+      { label: 'Party Ledger', href: '/accounting/party-ledger' },
+      { label: 'Trial Balance', href: '/accounting/trial-balance' },
     ],
   },
 ]

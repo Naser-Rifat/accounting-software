@@ -19,6 +19,7 @@ import {
 } from '../../src/config/app'
 import { hashPassword } from '../../src/server/auth/password'
 import { ACCOUNT_SEED } from './accounts'
+import { EXPENSE_CATEGORY_SEED } from './expense-categories'
 
 if (existsSync('.env')) process.loadEnvFile('.env')
 
@@ -217,6 +218,21 @@ async function seedFiscalYear() {
 }
 
 /**
+ * Expense categories map a kind of spend to its GL account, so an accountant can
+ * re-map without a developer. 5xxx is cost of revenue, 6xxx overhead.
+ */
+async function seedExpenseCategories() {
+  for (const category of EXPENSE_CATEGORY_SEED) {
+    await prisma.expenseCategory.upsert({
+      where: { code: category.code },
+      create: category,
+      update: { name: category.name, glAccountCode: category.glAccountCode },
+    })
+  }
+  console.log(`  expense cats    ${EXPENSE_CATEGORY_SEED.length}`)
+}
+
+/**
  * Asset categories decide which accounts an asset posts to, so the mapping is
  * data rather than code. Cost in 15xx, accumulated in 1590, charge in 6130.
  */
@@ -287,6 +303,117 @@ async function seedAdminUser() {
 
 const DEFAULT_ADMIN_PASSWORD = 'admin123'
 
+
+/**
+ * Opening exchange rates, one per foreign currency, dated the first day of the
+ * fiscal year.
+ *
+ * Without at least one rate on or before a voucher's date, `getRate` throws
+ * MISSING_EXCHANGE_RATE and every foreign-currency posting fails — so a system
+ * with six currencies and no rates can only transact in Taka.
+ *
+ * THE RATES BELOW ARE INDICATIVE PLACEHOLDERS, NOT MARKET DATA. They exist so
+ * the system is usable on day one. Replace them with real rates in
+ * Admin -> Currencies & Rates before booking anything you care about: a wrong
+ * rate silently misstates every foreign balance it touches.
+ */
+async function seedExchangeRates() {
+  const rateDate = new Date(
+    Date.UTC(FISCAL_YEAR.startYear, FISCAL_YEAR.startMonth - 1, 1),
+  )
+
+  const indicative: Record<string, string> = {
+    USD: '120.00000000',
+    GBP: '152.00000000',
+    AUD: '79.00000000',
+    CAD: '88.00000000',
+    EUR: '130.00000000',
+  }
+
+  let count = 0
+  for (const [code, rate] of Object.entries(indicative)) {
+    await prisma.exchangeRate.upsert({
+      where: {
+        fromCurrency_toCurrency_rateDate: {
+          fromCurrency: code,
+          toCurrency: 'BDT',
+          rateDate,
+        },
+      },
+      // Never overwrite: by the second run these may be real rates someone
+      // entered, and a seed must not quietly replace them with placeholders.
+      create: { fromCurrency: code, toCurrency: 'BDT', rateDate, rate, source: 'SEED' },
+      update: {},
+    })
+    count++
+  }
+
+  console.log(`  exchange rates  ${count} indicative opening rates — REPLACE with real rates`)
+}
+
+/**
+ * Cost centers — the analysis dimension a posting can be tagged with, so one set
+ * of books yields per-branch profit and loss.
+ *
+ * These are examples. Rename or deactivate them to match the real organisation;
+ * nothing in the posting rules depends on these particular codes.
+ */
+async function seedCostCenters() {
+  const costCenters = [
+    { code: 'HO', name: 'Head Office', type: 'BRANCH' as const },
+    { code: 'DHK', name: 'Dhaka Branch', type: 'BRANCH' as const },
+    { code: 'CTG', name: 'Chattogram Branch', type: 'BRANCH' as const },
+  ]
+
+  for (const costCenter of costCenters) {
+    await prisma.costCenter.upsert({
+      where: { code: costCenter.code },
+      create: costCenter,
+      update: { name: costCenter.name, type: costCenter.type },
+    })
+  }
+
+  console.log(`  cost centers    ${costCenters.length} (examples — rename to suit)`)
+}
+
+/**
+ * Bank and cash accounts, so Banking and the Cash & Bank Book have something to
+ * work with.
+ *
+ * Both map to 1020, because 1020 is seeded as a posting account rather than a
+ * heading. That means the Cash & Bank Book shows one combined 1020 row instead
+ * of one row per bank, and client money is not separated in the GL — see the
+ * note in docs about giving each bank its own sub-account under a 1020 heading.
+ */
+async function seedBankAccounts() {
+  const accounts = [
+    {
+      name: 'Operating Account',
+      bankName: 'City Bank',
+      currency: 'BDT',
+      glAccountCode: '1020',
+      isClientAccount: false,
+    },
+    {
+      // docs/modules/13-tuition-remittance.md: tuition collected for a
+      // university is client money and must never fund operations.
+      name: 'Client Money Account (tuition held)',
+      bankName: 'City Bank',
+      currency: 'BDT',
+      glAccountCode: '1020',
+      isClientAccount: true,
+    },
+  ]
+
+  for (const account of accounts) {
+    const existing = await prisma.bankAccount.findFirst({ where: { name: account.name } })
+    if (existing) continue
+    await prisma.bankAccount.create({ data: account })
+  }
+
+  console.log(`  bank accounts   ${accounts.length}`)
+}
+
 async function main() {
   console.log('Seeding accounting configuration...')
   await seedCurrencies()
@@ -295,7 +422,11 @@ async function main() {
   await seedSeries()
   await seedSettings()
   await seedFiscalYear()
+  await seedExchangeRates()
+  await seedCostCenters()
+  await seedBankAccounts()
   await seedAssetCategories()
+  await seedExpenseCategories()
   await seedAdminUser()
   console.log('Done.')
 }

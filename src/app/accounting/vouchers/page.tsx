@@ -1,9 +1,9 @@
 import Link from 'next/link'
 
 import { Amount, PageShell } from '@/components/layout/page-shell'
-import { Badge } from '@/components/ui/badge'
-
 import { Card, CardContent } from '@/components/ui/card'
+import { VoucherStatusBadge } from '@/components/shared/voucher-status-badge'
+import { VoucherFilters } from '@/features/accounting/voucher-filters'
 import {
   Table,
   TableBody,
@@ -19,10 +19,6 @@ import { listVouchers } from '@/server/services/voucher-service'
 
 export const metadata = { title: 'Vouchers' }
 export const dynamic = 'force-dynamic'
-
-const TYPES: (VoucherType | 'ALL')[] = [
-  'ALL', 'JV', 'SI', 'CN', 'PB', 'DN', 'RV', 'PV', 'CV', 'OB', 'CL',
-]
 
 export default async function VouchersPage({
   searchParams,
@@ -41,23 +37,19 @@ export default async function VouchersPage({
   })
 
   return (
-    <PageShell user={user} title="Vouchers" subtitle={`${total} in the ledger`}>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap gap-1">
-          {TYPES.map((type) => (
-            <Link
-              key={type}
-              href={type === 'ALL' ? '/accounting/vouchers' : `/accounting/vouchers?type=${type}`}
-              className={
-                typeParam === type
-                  ? 'rounded-md bg-foreground px-2.5 py-1 text-xs font-medium text-background'
-                  : 'rounded-md border px-2.5 py-1 text-xs hover:bg-accent'
-              }
-            >
-              {type}
-            </Link>
-          ))}
-        </div>
+    <PageShell
+      user={user}
+      title="Vouchers"
+      subtitle={
+        // `total` is the count after filtering, so calling it "in the ledger"
+        // while a filter is on would misreport the size of the ledger.
+        typeParam !== 'ALL' || statusParam !== 'ALL'
+          ? `${total} matching the filter`
+          : `${total} in the ledger`
+      }
+    >
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <VoucherFilters type={typeParam} status={statusParam} />
 
         {canPostManualJournal(user.role) ? (
           <Link
@@ -83,6 +75,7 @@ export default async function VouchersPage({
                   <TableHead className="w-16">Type</TableHead>
                   <TableHead className="w-28">Date</TableHead>
                   <TableHead>Narration</TableHead>
+                  <TableHead className="w-40">Status</TableHead>
                   <TableHead className="w-28">Period</TableHead>
                   <TableHead className="w-32 text-right">Amount</TableHead>
                 </TableRow>
@@ -97,16 +90,14 @@ export default async function VouchersPage({
                       >
                         {row.voucherNo}
                       </Link>
-                      {row.status === 'REVERSED' ? (
-                        <Badge variant="outline" className="ml-2">
-                          reversed
-                        </Badge>
-                      ) : null}
                     </TableCell>
                     <TableCell className="text-xs">{row.voucherType}</TableCell>
                     <TableCell className="whitespace-nowrap text-sm">{row.date}</TableCell>
                     <TableCell className="max-w-md truncate text-sm">
                       {row.narration}
+                    </TableCell>
+                    <TableCell>
+                      <VoucherStatusBadge status={row.status} />
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
                       {row.period}
