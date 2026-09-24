@@ -27,7 +27,7 @@ export function ActionForm({
   action: (prev: ActionState, formData: FormData) => Promise<ActionState>
   submitLabel: string
   pendingLabel?: string
-  variant?: 'default' | 'outline' | 'destructive' | 'secondary'
+  variant?: 'default' | 'outline' | 'destructive' | 'secondary' | 'ghost'
   confirm?: string
   children?: ReactNode
   className?: string

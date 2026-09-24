@@ -32,6 +32,47 @@ export function canManageChartOfAccounts(role: UserRole): boolean {
   return role === 'ADMIN' || role === 'ACCOUNTANT'
 }
 
+/** Universities, programs and commission agreements. Everyone else reads. */
+export function canManageUniversities(role: UserRole): boolean {
+  return role === 'ADMIN' || role === 'ACCOUNTANT'
+}
+
+/** Students, applications, documents and counseling notes. */
+export function canManageStudents(role: UserRole): boolean {
+  return role === 'ADMIN' || role === 'ACCOUNTANT' || role === 'COUNSELOR'
+}
+
+/** Branches, counselors, agents and intakes. */
+export function canManageSetup(role: UserRole): boolean {
+  return role === 'ADMIN' || role === 'ACCOUNTANT'
+}
+
+// --- Administration — docs/modules/12-administration.md role table -------
+
+export function isAdmin(role: UserRole): boolean {
+  return role === 'ADMIN'
+}
+
+/** Users, roles and password resets. */
+export function canManageUsers(role: UserRole): boolean {
+  return role === 'ADMIN'
+}
+
+/** Company, tax and fiscal-year settings (not tax codes or numbering, which accountants own). */
+export function canManageSettings(role: UserRole): boolean {
+  return role === 'ADMIN'
+}
+
+/** The audit log is read by the people who keep the books. */
+export function canViewAuditLog(role: UserRole): boolean {
+  return role === 'ADMIN' || role === 'ACCOUNTANT'
+}
+
+/** Decide approval requests. Deciding one's own request is refused separately. */
+export function canDecideApprovals(role: UserRole): boolean {
+  return role === 'ADMIN' || role === 'ACCOUNTANT'
+}
+
 /**
  * Who may approve a submitted voucher into the ledger.
  *

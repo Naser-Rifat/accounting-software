@@ -1,0 +1,198 @@
+// ---------------------------------------------------------------------------
+// STUDENTS
+//
+// The master record for every prospect and enrolled student, and the people
+// who bring them in. Master data — nothing here posts. The accounting hooks:
+// a Student is a Party on 1110 AR – Students (fees the agency charges them),
+// and a Counselor or Agent is a Party on 2020 AP – Counselors & Agents (the
+// internal commission the agency owes them).
+//
+// Rules: docs/modules/01-students.md · Entities: docs/01-domain-model.md
+// ---------------------------------------------------------------------------
+
+/// Derived from the furthest-progressed application (docs/01 rule 1), except
+/// LEAD / COUNSELING / DROPPED, which are set by hand.
+enum StudentStatus {
+  LEAD
+  COUNSELING
+  APPLIED
+  OFFER_RECEIVED
+  DEPOSIT_PAID
+  ENROLLED
+  VISA_APPROVED
+  ARRIVED
+  DROPPED
+  REJECTED
+}
+
+enum ActivityKind {
+  NOTE
+  CALL
+  MEETING
+  EMAIL
+}
+
+/// A branch maps to a cost center; every voucher a student's application
+/// generates is stamped with it — docs/11-decisions.md C8.
+model Branch {
+  id      String  @id @default(cuid())
+  code    String  @unique
+  name    String
+  address String?
+
+  costCenterId String
+  isActive     Boolean @default(true)
+
+  costCenter   CostCenter    @relation(fields: [costCenterId], references: [id])
+  counselors   Counselor[]
+  applications Application[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Counselor {
+  id String @id @default(cuid())
+
+  /// Party of type COUNSELOR on 2020, so internal commission can be owed to them.
+  partyId String @unique
+
+  name  String
+  email String?
+  phone String?
+
+  /// Default internal commission rate (% of the university commission).
+  commissionRate Decimal @db.Decimal(9, 4)
+
+  /// One branch per counselor, inherited by their students — docs/11 O8.
+  branchId String
+  isActive Boolean @default(true)
+
+  party        Party         @relation(fields: [partyId], references: [id])
+  branch       Branch        @relation(fields: [branchId], references: [id])
+  students     Student[]
+  applications Application[]
+  user         User?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([branchId, isActive])
+}
+
+/// External sub-agent who refers students.
+model Agent {
+  id String @id @default(cuid())
+
+  /// Party of type AGENT on 2020.
+  partyId String @unique
+
+  name    String
+  company String?
+  email   String?
+  phone   String?
+
+  commissionRate Decimal @db.Decimal(9, 4)
+  isActive       Boolean @default(true)
+
+  party    Party     @relation(fields: [partyId], references: [id])
+  students Student[]
+  user     User?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Student {
+  id String @id @default(cuid())
+
+  /// Party of type STUDENT on 1110. `Party.code` is the STU number.
+  partyId String @unique
+
+  firstName   String
+  lastName    String
+  dob         DateTime? @db.Date
+  gender      String?
+  nationality String?
+
+  passportNo        String?
+  passportIssuedOn  DateTime? @db.Date
+  passportExpiresOn DateTime? @db.Date
+  passportCountry   String?
+
+  email            String?
+  phone            String?
+  whatsapp         String?
+  address          String?
+  city             String?
+  country          String?
+  emergencyContact String?
+
+  /// ISO-2 codes the student wants to study in.
+  preferredCountries String[] @default([])
+  preferredIntake    String?
+
+  counselorId String
+  agentId     String?
+
+  status StudentStatus @default(LEAD)
+  /// Denormalised from the latest activity, for the counseling list.
+  nextFollowUpOn DateTime? @db.Date
+
+  /// Never deleted once it has applications (rule 4) — deactivated instead.
+  isActive Boolean @default(true)
+
+  party        Party              @relation(fields: [partyId], references: [id])
+  counselor    Counselor          @relation(fields: [counselorId], references: [id])
+  agent        Agent?             @relation(fields: [agentId], references: [id])
+  academic     AcademicRecord[]
+  activities   StudentActivity[]
+  applications Application[]
+  documents    Document[]
+
+  createdBy String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([lastName, firstName])
+  @@index([status])
+  @@index([counselorId])
+  @@index([passportNo])
+  @@index([email])
+}
+
+model AcademicRecord {
+  id        String @id @default(cuid())
+  studentId String
+
+  level         String
+  institution   String
+  subject       String?
+  result        String?
+  yearOfPassing Int
+
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([studentId])
+}
+
+/// Counseling notes and follow-ups — the student's timeline. Status changes
+/// are not duplicated here; they live in ApplicationStatusHistory.
+model StudentActivity {
+  id        String @id @default(cuid())
+  studentId String
+
+  kind           ActivityKind @default(NOTE)
+  body           String
+  occurredAt     DateTime     @default(now())
+  nextFollowUpOn DateTime?    @db.Date
+
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  createdBy String
+  createdAt DateTime @default(now())
+
+  @@index([studentId, occurredAt])
+}

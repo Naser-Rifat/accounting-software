@@ -80,3 +80,35 @@ export async function balanceOfAccount(code: string) {
   `
   return rows[0]?.balance ?? '0'
 }
+
+/**
+ * Subledger balances straight from the ledger, one per party.
+ *
+ * A party's outstanding is never stored on the party — it is the sum of its
+ * lines on the control account, so it cannot drift from the books. `side`
+ * says which way is "owed": a receivable (1110, 1120) is debit − credit, a
+ * payable (2010, 2020) is credit − debit. Only POSTED and REVERSED entries
+ * count; a PENDING_APPROVAL voucher is invisible to every balance.
+ */
+export async function controlBalances(
+  accountCode: string,
+  partyIds: string[],
+  side: 'DEBIT' | 'CREDIT',
+): Promise<Map<string, string>> {
+  if (partyIds.length === 0) return new Map()
+
+  const rows = await prisma.$queryRaw<{ partyId: string; balance: string }[]>`
+    SELECT l."partyId",
+           (CASE WHEN ${side} = 'DEBIT'
+                 THEN SUM(l."debit") - SUM(l."credit")
+                 ELSE SUM(l."credit") - SUM(l."debit") END)::text AS balance
+      FROM "JournalLine" l
+      JOIN "Account" a      ON a."id" = l."accountId"
+      JOIN "JournalEntry" e ON e."id" = l."entryId"
+     WHERE a."code" = ${accountCode}
+       AND e."status" IN ('POSTED', 'REVERSED')
+       AND l."partyId" = ANY(${partyIds}::text[])
+     GROUP BY l."partyId"
+  `
+  return new Map(rows.map((r) => [r.partyId, Number(r.balance).toFixed(2)]))
+}

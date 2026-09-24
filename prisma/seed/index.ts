@@ -20,6 +20,8 @@ import {
 import { hashPassword } from '../../src/server/auth/password'
 import { ACCOUNT_SEED } from './accounts'
 import { EXPENSE_CATEGORY_SEED } from './expense-categories'
+import { seedStudents } from './students'
+import { seedUniversities } from './universities'
 
 if (existsSync('.env')) process.loadEnvFile('.env')
 
@@ -428,6 +430,8 @@ async function main() {
   await seedAssetCategories()
   await seedExpenseCategories()
   await seedAdminUser()
+  await seedUniversities(prisma)
+  await seedStudents(prisma)
   console.log('Done.')
 }
 

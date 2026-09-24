@@ -182,3 +182,31 @@ export const SUPPORTED_CURRENCIES = [
 ] as const
 
 export const DEFAULT_PAGE_SIZE = 25
+
+/**
+ * Choices for ENUM settings, keyed by setting key — docs/modules/16-settings.md.
+ * The admin screen renders a select from these and the service refuses any
+ * other value. Lives next to SETTING_DEFAULTS so a setting is defined in one place.
+ */
+export const SETTING_OPTIONS: Record<string, readonly string[]> = {
+  'company.country': ['BD', 'AU', 'CA', 'DE', 'GB', 'IE', 'MY', 'NZ', 'US'],
+  'company.baseCurrency': SUPPORTED_CURRENCIES.map((c) => c.code),
+  'company.locale': ['en-BD', 'bn-BD'],
+  'company.numberGrouping': ['SOUTH_ASIAN', 'INTERNATIONAL'],
+  'company.dateFormat': ['DD-MMM-YYYY', 'DD/MM/YYYY', 'YYYY-MM-DD'],
+  'tax.filingPeriod': ['MONTHLY', 'QUARTERLY'],
+  'fiscalYear.periodLength': ['MONTHLY', 'QUARTERLY'],
+  'internal_commission.base': ['NET', 'GROSS'],
+  'internal_commission.payout_trigger': ['APPROVED', 'RECEIVED'],
+}
+
+/** Human labels for the settings sections, in the order the hub shows them. */
+export const SETTING_SECTIONS: { section: SettingSection; label: string; blurb: string; href: string }[] = [
+  { section: 'COMPANY', label: 'Company', blurb: 'Identity printed on every document, locale, base currency', href: '/admin/settings/company' },
+  { section: 'TAX', label: 'Tax', blurb: 'VAT switches and the default withholding rate; rates live in tax codes', href: '/admin/settings/tax' },
+  { section: 'NUMBERING', label: 'Numbering', blurb: 'Document and voucher series', href: '/admin/settings/numbering' },
+  { section: 'FISCAL_YEAR', label: 'Fiscal year', blurb: 'Year start, patterns and period policy', href: '/admin/fiscal-years' },
+  { section: 'APPROVALS', label: 'Approvals', blurb: 'Thresholds that route a document to an approver', href: '/admin/settings/approvals' },
+  { section: 'COMMISSION', label: 'Commission', blurb: 'Internal commission base and payout trigger', href: '/admin/settings/commission' },
+  { section: 'DOCUMENTS', label: 'Documents', blurb: 'Warnings on held client money', href: '/admin/settings/documents' },
+]

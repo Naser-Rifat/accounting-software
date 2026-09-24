@@ -1,7 +1,10 @@
 import 'server-only'
 
 import { AccountingError } from './errors'
+import { formatNumber } from '@/lib/numbering'
 import type { PrismaTransaction } from '@/server/db/client'
+
+export { formatNumber }
 
 /**
  * Gapless document and voucher numbering — docs/05-voucher-types.md.
@@ -69,17 +72,22 @@ export async function allocateNumber(
  */
 const GLOBAL_COUNTER = '__continuous__'
 
-export function formatNumber(input: {
-  prefix: string
-  padding: number
-  fiscalYearCode: string | null
-  seq: number
-  separator?: string
-}): string {
-  const { prefix, padding, fiscalYearCode, seq, separator = '-' } = input
-  const padded = String(seq).padStart(padding, '0')
-
-  return fiscalYearCode
-    ? `${prefix}${separator}${fiscalYearCode}${separator}${padded}`
-    : `${prefix}${separator}${padded}`
+/**
+ * The fiscal year covering `onDate`, for numbering business documents that are
+ * not postings (students, applications). Period locks do not apply to those —
+ * a closed month still lets you register a student — so this deliberately does
+ * not go through `resolvePeriod`.
+ */
+export async function fiscalYearFor(tx: PrismaTransaction, onDate: Date) {
+  const fy = await tx.fiscalYear.findFirst({
+    where: { startDate: { lte: onDate }, endDate: { gte: onDate } },
+    select: { id: true, code: true },
+  })
+  if (!fy) {
+    throw new AccountingError(
+      'NO_OPEN_PERIOD',
+      `No fiscal year covers ${onDate.toISOString().slice(0, 10)}. Create it in Admin > Fiscal Years.`,
+    )
+  }
+  return fy
 }

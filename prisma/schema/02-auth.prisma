@@ -29,6 +29,14 @@ model User {
   mustChangePassword Boolean   @default(false)
   lastLoginAt        DateTime?
 
+  /// Which counselor or agent this login is — docs/modules/12. Row-level
+  /// scoping of students by counselor is not enforced yet.
+  counselorId String? @unique
+  agentId     String? @unique
+
+  counselor Counselor? @relation(fields: [counselorId], references: [id])
+  agent     Agent?     @relation(fields: [agentId], references: [id])
+
   sessions Session[]
 
   createdAt DateTime @default(now())

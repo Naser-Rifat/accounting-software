@@ -1,0 +1,121 @@
+// ---------------------------------------------------------------------------
+// UNIVERSITIES
+//
+// The partner institutions that pay commission, their programs and their
+// contacts. Master data — nothing here posts to the ledger. The accounting hook
+// is that every University is also a Party on 1120 AR – Universities, so the
+// commission module can post per university and the control account
+// reconciles to a per-university subledger.
+//
+// Rules: docs/modules/02-universities.md · Entities: docs/01-domain-model.md
+// ---------------------------------------------------------------------------
+
+enum ProgramLevel {
+  FOUNDATION
+  DIPLOMA
+  BACHELOR
+  MASTER
+  PHD
+}
+
+model University {
+  id String @id @default(cuid())
+
+  /// The Party this university is in the subledger. Created in the same
+  /// transaction; `Party.code` doubles as the university's code.
+  partyId String @unique
+
+  name    String
+  /// ISO 3166-1 alpha-2, e.g. "AU".
+  country String
+  city    String?
+  website String?
+  logoUrl String?
+
+  /// Money routing — docs/modules/02-universities.md §Money routing.
+  /// True: students pay tuition to the agency, which remits it (client money,
+  /// module 13). False: students pay the university directly.
+  collectsTuitionViaAgency Boolean @default(false)
+  /// Tax deducted at source from commission, as a percentage. Null means
+  /// resolve from the country, then `tax.withholdingDefaultRate`.
+  withholdingRate          Decimal? @db.Decimal(9, 4)
+
+  /// Currency the university pays commission in. Mirrored onto Party.currency.
+  currency String @default("USD")
+
+  bankName        String?
+  bankAccountName String?
+  bankAccountNo   String?
+  bankSwift       String?
+  bankIban        String?
+
+  notes String?
+
+  /// Deactivating keeps every program, agreement and posting intact — rule 3.
+  isActive Boolean @default(true)
+
+  party        Party                 @relation(fields: [partyId], references: [id])
+  contacts     UniversityContact[]
+  programs     Program[]
+  agreements   CommissionAgreement[]
+  applications Application[]
+  documents    Document[]
+
+  createdBy String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([name])
+  @@index([country])
+  @@index([isActive])
+}
+
+model UniversityContact {
+  id           String @id @default(cuid())
+  universityId String
+
+  name  String
+  role  String?
+  email String?
+  phone String?
+
+  /// At most one primary per university — partial unique index in the migration.
+  isPrimary Boolean @default(false)
+  isActive  Boolean @default(true)
+
+  university University @relation(fields: [universityId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([universityId])
+}
+
+model Program {
+  id           String @id @default(cuid())
+  universityId String
+
+  name           String
+  level          ProgramLevel
+  durationMonths Int
+
+  /// The default fee only. The Application snapshots the actual fee, so a later
+  /// price change never restates historical commission.
+  tuitionFee Decimal @db.Decimal(18, 2)
+  currency   String
+
+  /// Intake months, 1–12. [2, 9] = February and September.
+  intakeMonths Int[] @default([])
+
+  isActive Boolean @default(true)
+
+  university   University    @relation(fields: [universityId], references: [id])
+  applications Application[]
+
+  createdBy String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([universityId, name, level])
+  @@index([level])
+}

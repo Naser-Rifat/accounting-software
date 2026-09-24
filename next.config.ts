@@ -7,6 +7,13 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: path.resolve(__dirname),
   },
+  experimental: {
+    serverActions: {
+      // Document uploads (src/server/services/document-service.ts) cap files
+      // at 10 MB; the default action body limit is 1 MB.
+      bodySizeLimit: "12mb",
+    },
+  },
 };
 
 export default nextConfig;

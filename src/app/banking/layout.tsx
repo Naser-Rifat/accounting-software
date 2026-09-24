@@ -1,13 +1,10 @@
-import { redirect } from 'next/navigation'
-
 import { Sidebar } from '@/components/layout/sidebar'
 import { ACCOUNTING_NAV } from '@/config/nav'
-import { getCurrentUser } from '@/server/auth/session'
+import { requireSignedIn } from '@/server/auth/session'
 
 /** Banking sits inside the Accounting module and shares its sidebar. */
 export default async function BankingLayout({ children }: LayoutProps<'/banking'>) {
-  const user = await getCurrentUser()
-  if (!user) redirect('/login')
+  await requireSignedIn()
 
   return (
     <div className="flex h-screen overflow-hidden">

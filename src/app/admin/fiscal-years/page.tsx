@@ -12,7 +12,8 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { ActionForm } from '@/features/accounting/action-form'
-import { submitFiscalYear } from '@/server/actions/settings'
+import { SettingsSection } from '@/features/admin/settings-section'
+import { submitFiscalYear, submitSetting } from '@/server/actions/settings'
 import { canReopenPeriod } from '@/server/auth/authorize'
 import { requireUser } from '@/server/auth/session'
 import { listYears } from '@/server/services/fiscal-year-service'
@@ -26,6 +27,7 @@ export default async function FiscalYearsPage() {
   const [years, settings] = await Promise.all([listYears(), listSettings('FISCAL_YEAR')])
 
   const isAdmin = canReopenPeriod(user.role)
+  const today = new Date().toISOString().slice(0, 10)
   const byKey = new Map(settings.map((s) => [s.key, s]))
   const start = byKey.get('fiscalYear.startMonthDay')
   const latest = years[0]
@@ -39,36 +41,13 @@ export default async function FiscalYearsPage() {
     >
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Configuration</CardTitle>
+          <CardTitle className="text-base">
+            Configuration
+            {!isAdmin ? <span className="ml-2 text-xs font-normal text-muted-foreground">read-only for your role</span> : null}
+          </CardTitle>
         </CardHeader>
         <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-72">Setting</TableHead>
-                <TableHead className="w-56">Value</TableHead>
-                <TableHead>Status</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {settings.map((setting) => (
-                <TableRow key={setting.key}>
-                  <TableCell className="font-mono text-xs">{setting.key}</TableCell>
-                  <TableCell className="text-sm">{setting.value}</TableCell>
-                  <TableCell className="text-xs text-muted-foreground">
-                    {setting.isLocked ? (
-                      <span className="flex items-center gap-2">
-                        <Badge variant="outline">locked</Badge>
-                        {setting.lockReason}
-                      </span>
-                    ) : (
-                      'editable'
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+          <SettingsSection settings={settings} canEdit={isAdmin} action={submitSetting} today={today} />
 
           <p className="mt-4 rounded-md border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
             <strong className="text-foreground">Why the start date locks.</strong> Periods

@@ -1,18 +1,15 @@
-import { redirect } from 'next/navigation'
-
 import { Button } from '@/components/ui/button'
 import { MODULES } from '@/config/modules'
 import { ModuleCard } from '@/features/modules/module-card'
 import { logout } from '@/server/actions/auth'
-import { getCurrentUser } from '@/server/auth/session'
+import { requireSignedIn } from '@/server/auth/session'
 
 export const metadata = {
   title: 'Modules - Accounting System',
 }
 
 export default async function ModulesPage() {
-  const user = await getCurrentUser()
-  if (!user) redirect('/login')
+  const user = await requireSignedIn()
 
   const available = MODULES.filter((m) => m.status === 'AVAILABLE')
   const planned = MODULES.filter((m) => m.status === 'PLANNED')

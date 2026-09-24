@@ -8,6 +8,7 @@ import { allocateNumber } from '@/server/accounting/numbering'
 import { resolvePeriod } from '@/server/accounting/period'
 import { postEntry } from '@/server/accounting/post'
 import { prisma } from '@/server/db/client'
+import { allocatePartyCode } from '@/server/services/party-service'
 
 /**
  * Purchases & payments — docs/modules/07-expenses.md.
@@ -59,25 +60,17 @@ export async function createVendor(input: { name: string; code?: string; created
   const name = input.name.trim()
   if (!name) throw new AccountingError('INVALID_LINE', 'Vendor name is required.')
 
-  // A readable code derived from the name, made unique with a counter.
-  const base =
-    input.code?.trim().toUpperCase() ||
-    name.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8) ||
-    'VENDOR'
-
-  let code = base
-  for (let i = 2; await prisma.party.findUnique({ where: { code } }); i++) {
-    code = `${base}-${i}`
-  }
-
-  return prisma.party.create({
-    data: {
-      code,
-      name,
-      type: 'VENDOR',
-      controlAccountCode: ACCOUNTS.AP_VENDORS,
-      currency: 'BDT',
-    },
+  return prisma.$transaction(async (tx) => {
+    const code = await allocatePartyCode(tx, name, input.code, 'VENDOR')
+    return tx.party.create({
+      data: {
+        code,
+        name,
+        type: 'VENDOR',
+        controlAccountCode: ACCOUNTS.AP_VENDORS,
+        currency: 'BDT',
+      },
+    })
   })
 }
 

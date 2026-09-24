@@ -1,8 +1,6 @@
-import { redirect } from 'next/navigation'
-
 import { Sidebar } from '@/components/layout/sidebar'
 import { ACCOUNTING_NAV } from '@/config/nav'
-import { getCurrentUser } from '@/server/auth/session'
+import { requireSignedIn } from '@/server/auth/session'
 
 /**
  * Accounting module shell. The auth check lives here so every route beneath it
@@ -11,8 +9,7 @@ import { getCurrentUser } from '@/server/auth/session'
 export default async function AccountingLayout({
   children,
 }: LayoutProps<'/accounting'>) {
-  const user = await getCurrentUser()
-  if (!user) redirect('/login')
+  await requireSignedIn()
 
   return (
     <div className="flex h-screen overflow-hidden">

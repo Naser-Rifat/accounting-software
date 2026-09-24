@@ -34,6 +34,15 @@ export type AccountingErrorCode =
   | 'SERIES_NOT_CONFIGURED'
   | 'DUPLICATE_ACCOUNT_CODE'
   | 'INVALID_ACCOUNT_PARENT'
+  // Master data — docs/modules/02-universities.md
+  | 'VALIDATION'
+  | 'NOT_FOUND'
+  | 'AGREEMENT_OVERLAP'
+  | 'INVALID_SCHEDULE'
+  // Pipeline — docs/02-status-flows.md
+  | 'ILLEGAL_TRANSITION'
+  | 'NO_AGREEMENT_IN_FORCE'
+  | 'INVALID_DOCUMENT'
 
 export class AccountingError extends Error {
   readonly code: AccountingErrorCode

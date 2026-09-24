@@ -2,6 +2,7 @@ import 'server-only'
 
 import { createHash, randomBytes } from 'node:crypto'
 import { cookies } from 'next/headers'
+import { redirect } from 'next/navigation'
 import { cache } from 'react'
 
 import { prisma } from '@/server/db/client'
@@ -85,10 +86,34 @@ export const getCurrentUser = cache(async (): Promise<SessionUser | null> => {
   }
 })
 
-/** Throws if not signed in — for pages and actions that require a user. */
-export async function requireUser(): Promise<SessionUser> {
+export type RequireOptions = {
+  /** Only the password-change flow and sign-out may run while a change is pending. */
+  allowPendingPasswordChange?: boolean
+}
+
+const PASSWORD_PAGE = '/account/password'
+
+/**
+ * For layouts and pages: send an anonymous visitor to sign in, and anyone whose
+ * password must be changed (seeded or reset accounts) to the change page. Every
+ * module shell calls this, so no route beneath can forget either rule.
+ */
+export async function requireSignedIn(options: RequireOptions = {}): Promise<SessionUser> {
+  const user = await getCurrentUser()
+  if (!user) redirect('/login')
+  if (user.mustChangePassword && !options.allowPendingPasswordChange) redirect(PASSWORD_PAGE)
+  return user
+}
+
+/**
+ * For pages and Server Actions that require a user. A direct POST from an
+ * account with a pending password change is redirected too — the flow cannot
+ * be skipped by never loading a page.
+ */
+export async function requireUser(options: RequireOptions = {}): Promise<SessionUser> {
   const user = await getCurrentUser()
   if (!user) throw new Error('UNAUTHENTICATED')
+  if (user.mustChangePassword && !options.allowPendingPasswordChange) redirect(PASSWORD_PAGE)
   return user
 }
 

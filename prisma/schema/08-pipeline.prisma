@@ -1,0 +1,181 @@
+// ---------------------------------------------------------------------------
+// PIPELINE
+//
+// One student applying to one program at one university for one intake.
+// Every commission originates from an application: reaching ENROLLED creates
+// the EXPECTED commission rows from the agreement in force (docs/modules/03
+// rule 2). Nothing here posts — EXPECTED never touches the ledger.
+//
+// Rules: docs/modules/03-applications.md · Flow: docs/02-status-flows.md
+// ---------------------------------------------------------------------------
+
+enum ApplicationStatus {
+  DRAFT
+  SUBMITTED
+  UNDER_REVIEW
+  OFFER_RECEIVED
+  DEPOSIT_PAID
+  ENROLLED
+  REJECTED
+  DECLINED
+  WITHDRAWN
+}
+
+enum VisaStatus {
+  NOT_STARTED
+  DOCUMENTS_PREPARED
+  APPLIED
+  INTERVIEW
+  APPROVED
+  REFUSED
+}
+
+enum DocumentType {
+  PASSPORT
+  ACADEMIC_TRANSCRIPT
+  CERTIFICATE
+  IELTS
+  SOP
+  LOR
+  CV
+  BANK_STATEMENT
+  OFFER_LETTER
+  VISA
+  OTHER
+}
+
+model Intake {
+  id    String @id @default(cuid())
+  /// "Sep 2026" — derived from month and year.
+  name  String
+  month Int
+  year  Int
+
+  isActive Boolean @default(true)
+
+  applications Application[]
+
+  createdAt DateTime @default(now())
+
+  @@unique([year, month])
+}
+
+model Application {
+  id   String @id @default(cuid())
+  code String @unique
+
+  studentId    String
+  universityId String
+  programId    String
+  intakeId     String
+  counselorId  String
+  /// Inherited from the counselor at creation — stamps the cost center on
+  /// every voucher this application generates (rule 7).
+  branchId     String
+
+  /// Null while DRAFT; set when submitted.
+  appliedOn DateTime? @db.Date
+  status    ApplicationStatus @default(DRAFT)
+
+  applicationFee Decimal @default(0) @db.Decimal(18, 2)
+  /// Snapshotted from the Program at creation, together with the duration —
+  /// this is the commission base, and a later program edit must never move it.
+  tuitionFee     Decimal @db.Decimal(18, 2)
+  durationMonths Int
+  currency       String
+
+  /// Snapshot of University.collectsTuitionViaAgency at creation (rule 6).
+  paidViaAgency Boolean @default(false)
+
+  offerDate       DateTime? @db.Date
+  offerConditions String?
+
+  depositAmount    Decimal?  @db.Decimal(18, 2)
+  depositPaidOn    DateTime? @db.Date
+  depositReference String?
+
+  enrolledOn DateTime? @db.Date
+
+  visaStatus     VisaStatus @default(NOT_STARTED)
+  visaAppliedOn  DateTime?  @db.Date
+  visaDecisionOn DateTime?  @db.Date
+
+  arrivedOn DateTime? @db.Date
+
+  /// Why it was rejected, declined or withdrawn.
+  outcomeReason String?
+
+  student     Student                    @relation(fields: [studentId], references: [id])
+  university  University                 @relation(fields: [universityId], references: [id])
+  program     Program                    @relation(fields: [programId], references: [id])
+  intake      Intake                     @relation(fields: [intakeId], references: [id])
+  counselor   Counselor                  @relation(fields: [counselorId], references: [id])
+  branch      Branch                     @relation(fields: [branchId], references: [id])
+  history     ApplicationStatusHistory[]
+  documents   Document[]
+  commissions Commission[]
+
+  createdBy String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([studentId])
+  @@index([universityId])
+  @@index([intakeId])
+  @@index([status])
+  @@index([counselorId])
+}
+
+/// Every status transition, with who and why — the audit trail docs/02
+/// transition rule 3 asks for. There is no general AuditLog model yet; this
+/// table is what an auditor reads for the pipeline.
+model ApplicationStatusHistory {
+  id            String @id @default(cuid())
+  applicationId String
+
+  fromStatus ApplicationStatus?
+  toStatus   ApplicationStatus
+  note       String?
+
+  changedBy String
+  changedAt DateTime @default(now())
+
+  application Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@index([applicationId, changedAt])
+}
+
+/// An uploaded file. Exactly one owner among student / application /
+/// university. The file itself lives under UPLOAD_DIR at `storageKey`; the
+/// mime type is what the bytes were sniffed as, never what the browser said.
+model Document {
+  id String @id @default(cuid())
+
+  studentId     String?
+  applicationId String?
+  universityId  String?
+
+  type      DocumentType
+  fileName  String
+  mimeType  String
+  sizeBytes Int
+  /// `<yyyy>/<mm>/<cuid>.<ext>`, generated server-side.
+  storageKey String @unique
+
+  verified   Boolean   @default(false)
+  verifiedBy String?
+  verifiedOn DateTime?
+  /// For passports, visas, test results.
+  expiresOn  DateTime? @db.Date
+
+  student     Student?     @relation(fields: [studentId], references: [id])
+  application Application? @relation(fields: [applicationId], references: [id])
+  university  University?  @relation(fields: [universityId], references: [id])
+
+  uploadedBy String
+  uploadedAt DateTime @default(now())
+
+  @@index([studentId])
+  @@index([applicationId])
+  @@index([type, verified])
+}

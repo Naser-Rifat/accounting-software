@@ -8,11 +8,20 @@ export type NavItem = {
   href: string
   /** Route is planned but not built yet — rendered disabled, never as a dead link. */
   soon?: boolean
+  /** Only an ADMIN sees it — hidden, not merely disabled, for everyone else. */
+  adminOnly?: boolean
 }
 
 export type NavGroup = {
   label: string
   items: NavItem[]
+}
+
+/** The groups a role may see; empty groups drop out. */
+export function navForRole(groups: NavGroup[], role: string): NavGroup[] {
+  return groups
+    .map((g) => ({ ...g, items: g.items.filter((i) => !i.adminOnly || role === 'ADMIN') }))
+    .filter((g) => g.items.length > 0)
 }
 
 /**
@@ -79,6 +88,7 @@ export const ACCOUNTING_NAV: NavGroup[] = [
     label: 'Setup',
     items: [
       { label: 'Cost Centers', href: '/accounting/cost-centers' },
+      { label: 'Branches & Team', href: '/admin/branches' },
       { label: 'Currencies & Rates', href: '/admin/currencies' },
       { label: 'Tax Codes', href: '/admin/tax-codes' },
       { label: 'Fiscal Years', href: '/admin/fiscal-years' },
@@ -195,6 +205,74 @@ export const NAV: NavGroup[] = [
 ]
 
 /** Sidebar for the Purchases & Payments module. */
+/** Sidebar for the Administration module. Routes match docs/09-navigation.md. */
+export const ADMIN_NAV: NavGroup[] = [
+  {
+    label: 'Administration',
+    items: [
+      { label: 'Users & Roles', href: '/admin/users', adminOnly: true },
+      { label: 'Branches & Team', href: '/admin/branches' },
+      { label: 'Approval Workflow', href: '/admin/approvals' },
+      { label: 'Audit Logs', href: '/admin/audit' },
+      { label: 'Settings', href: '/admin/settings', adminOnly: true },
+    ],
+  },
+  {
+    label: 'Setup',
+    items: [
+      { label: 'Currencies & Rates', href: '/admin/currencies' },
+      { label: 'Tax Codes', href: '/admin/tax-codes' },
+      { label: 'Fiscal Years', href: '/admin/fiscal-years' },
+      { label: 'Numbering', href: '/admin/settings/numbering' },
+    ],
+  },
+]
+
+/** Sidebar for the Students module. Routes match docs/09-navigation.md. */
+export const STUDENTS_NAV: NavGroup[] = [
+  {
+    label: 'Students',
+    items: [
+      { label: 'Students', href: '/students' },
+      { label: 'Leads', href: '/students/leads' },
+      { label: 'Counseling', href: '/students/counseling' },
+    ],
+  },
+  {
+    label: 'Pipeline',
+    items: [
+      { label: 'Applications', href: '/applications' },
+      { label: 'Documents', href: '/documents' },
+    ],
+  },
+  {
+    label: 'Setup',
+    items: [
+      { label: 'Branches & Team', href: '/admin/branches' },
+      { label: 'Universities', href: '/universities' },
+    ],
+  },
+]
+
+/** Sidebar for the Universities module. Routes match docs/09-navigation.md. */
+export const UNIVERSITIES_NAV: NavGroup[] = [
+  {
+    label: 'Universities',
+    items: [
+      { label: 'Universities', href: '/universities' },
+      { label: 'Programs', href: '/universities/programs' },
+      { label: 'Commission Agreements', href: '/universities/agreements' },
+    ],
+  },
+  {
+    label: 'Accounting',
+    items: [
+      { label: 'Party Ledger', href: '/accounting/party-ledger' },
+      { label: 'Trial Balance', href: '/accounting/trial-balance' },
+    ],
+  },
+]
+
 export const PURCHASES_NAV: NavGroup[] = [
   {
     label: 'Purchases',

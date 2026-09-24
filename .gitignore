@@ -38,3 +38,6 @@ next-env.d.ts
 
 # prisma generated files
 src/generated/
+
+# uploaded documents (UPLOAD_DIR, see .env.example)
+/uploads/

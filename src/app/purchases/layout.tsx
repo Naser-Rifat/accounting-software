@@ -1,13 +1,10 @@
-import { redirect } from 'next/navigation'
-
 import { Sidebar } from '@/components/layout/sidebar'
 import { PURCHASES_NAV } from '@/config/nav'
-import { getCurrentUser } from '@/server/auth/session'
+import { requireSignedIn } from '@/server/auth/session'
 
 /** Purchases module shell. Auth guarded here, so no page beneath can forget. */
 export default async function PurchasesLayout({ children }: LayoutProps<'/purchases'>) {
-  const user = await getCurrentUser()
-  if (!user) redirect('/login')
+  await requireSignedIn()
 
   return (
     <div className="flex h-screen overflow-hidden">

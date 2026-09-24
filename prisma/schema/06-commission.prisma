@@ -1,0 +1,178 @@
+// ---------------------------------------------------------------------------
+// COMMISSION
+//
+// The commercial contract with a university and its instalment schedule.
+// Commission rows, adjustments and claims (docs/modules/04, 05) join this file
+// when those modules are built.
+//
+// An agreement is immutable once created, except for closing its date range or
+// deactivating it: every Commission snapshots the agreement id it was priced
+// from, so restating the terms would restate history — docs/modules/02 rule 1.
+//
+// Rules: docs/modules/02-universities.md §Commission agreement
+// ---------------------------------------------------------------------------
+
+enum RateType {
+  PERCENT
+  FIXED
+}
+
+enum AppliesTo {
+  FIRST_YEAR_TUITION
+  TOTAL_TUITION
+  PER_STUDENT
+}
+
+/// When a commission becomes ELIGIBLE — docs/02-status-flows.md.
+enum EligibilityTrigger {
+  ENROLLMENT
+  CENSUS_DATE
+  ARRIVAL
+}
+
+enum ScheduleType {
+  ONE_TIME
+  PER_YEAR
+  PER_SEMESTER
+  CUSTOM
+}
+
+/// What fires one instalment of the schedule.
+enum TriggerEvent {
+  ENROLLMENT
+  CENSUS_DATE
+  ARRIVAL
+  RE_ENROLLMENT
+  FIXED_DATE
+}
+
+model CommissionAgreement {
+  id           String @id @default(cuid())
+  universityId String
+
+  /// Human label, e.g. "2026 Master Agreement".
+  title     String
+  /// The university's own contract reference.
+  reference String?
+
+  effectiveFrom DateTime  @db.Date
+  /// Null = open-ended. Active agreements of one university never overlap —
+  /// checked in the service and by an EXCLUDE constraint in the migration.
+  effectiveTo   DateTime? @db.Date
+
+  rateType RateType
+  /// 15.0000 = 15% when PERCENT; a money amount per student when FIXED.
+  rate     Decimal @db.Decimal(18, 4)
+
+  appliesTo          AppliesTo
+  eligibilityTrigger EligibilityTrigger
+  scheduleType       ScheduleType
+
+  /// Net days from claim to due date; drives receivable aging.
+  paymentTermsDays Int @default(30)
+
+  /// Currency the university pays in.
+  currency    String
+  contractUrl String?
+  notes       String?
+
+  isActive Boolean @default(true)
+
+  university  University                @relation(fields: [universityId], references: [id])
+  lines       CommissionScheduleLine[]
+  commissions Commission[]
+
+  createdBy String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([universityId, effectiveFrom])
+  @@index([isActive])
+}
+
+/// One instalment of an agreement. `percentOfTotal` sums to 100 per agreement;
+/// an application generates one Commission row per line.
+model CommissionScheduleLine {
+  id          String @id @default(cuid())
+  agreementId String
+
+  seq   Int
+  /// "Year 1", "On enrollment".
+  label String
+
+  percentOfTotal Decimal      @db.Decimal(9, 4)
+  triggerEvent   TriggerEvent
+  offsetDays     Int          @default(0)
+
+  agreement   CommissionAgreement @relation(fields: [agreementId], references: [id], onDelete: Cascade)
+  commissions Commission[]
+
+  @@unique([agreementId, seq])
+}
+
+/// docs/02-status-flows.md — EXPECTED and ELIGIBLE never post; APPROVED posts
+/// row 2; CLAIMED row 3; receipts rows 6–8; CANCELLED row 9; WRITTEN_OFF row 10.
+enum CommissionStatus {
+  EXPECTED
+  ELIGIBLE
+  APPROVED
+  CLAIMED
+  PARTIALLY_RECEIVED
+  RECEIVED
+  CANCELLED
+  WRITTEN_OFF
+}
+
+/// Money the agency expects from a university for one placed student — one
+/// row per schedule line of the agreement in force at enrollment. Rate and
+/// agreement are snapshotted here; later contract changes never restate a
+/// commission (docs/modules/04 guardrail 2).
+///
+/// The pipeline module creates these at EXPECTED and cancels them on withdrawal.
+/// Everything from ELIGIBLE onward belongs to the commission module.
+model Commission {
+  id String @id @default(cuid())
+
+  applicationId  String
+  agreementId    String
+  scheduleLineId String?
+
+  instalmentSeq   Int
+  instalmentLabel String
+
+  /// The tuition (or 1.00 for PER_STUDENT) the rate was applied to.
+  baseAmount Decimal  @db.Decimal(18, 2)
+  rateType   RateType
+  rate       Decimal  @db.Decimal(18, 4)
+
+  /// This instalment's share of the total commission.
+  expectedAmount Decimal @db.Decimal(18, 2)
+  /// expectedAmount + adjustments — the billable figure.
+  netAmount      Decimal @db.Decimal(18, 2)
+  currency       String
+
+  /// Set at APPROVED using the rate on the approval date.
+  fxRate             Decimal? @db.Decimal(18, 8)
+  baseCurrencyAmount Decimal? @db.Decimal(18, 2)
+
+  status CommissionStatus @default(EXPECTED)
+
+  eligibleOn DateTime? @db.Date
+  approvedOn DateTime? @db.Date
+  receivedOn DateTime? @db.Date
+
+  /// The JV raised at APPROVED.
+  journalEntryId String?
+
+  application  Application             @relation(fields: [applicationId], references: [id])
+  agreement    CommissionAgreement     @relation(fields: [agreementId], references: [id])
+  scheduleLine CommissionScheduleLine? @relation(fields: [scheduleLineId], references: [id])
+
+  createdBy String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([applicationId, instalmentSeq])
+  @@index([status])
+  @@index([agreementId])
+}

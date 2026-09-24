@@ -3,7 +3,15 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 
-import { ACCOUNTING_NAV, NAV, PURCHASES_NAV, type NavGroup } from '@/config/nav'
+import {
+  ACCOUNTING_NAV,
+  ADMIN_NAV,
+  NAV,
+  PURCHASES_NAV,
+  STUDENTS_NAV,
+  UNIVERSITIES_NAV,
+  type NavGroup,
+} from '@/config/nav'
 
 /**
  * Where am I, and what is one level up.
@@ -16,7 +24,7 @@ import { ACCOUNTING_NAV, NAV, PURCHASES_NAV, type NavGroup } from '@/config/nav'
  * alone tells you what you are looking at, not which section it belongs to.
  */
 
-const SETS: NavGroup[][] = [ACCOUNTING_NAV, PURCHASES_NAV, NAV]
+const SETS: NavGroup[][] = [ACCOUNTING_NAV, PURCHASES_NAV, UNIVERSITIES_NAV, STUDENTS_NAV, ADMIN_NAV, NAV]
 
 function findTrail(pathname: string): { group: string; item: string; href: string } | null {
   let best: { group: string; item: string; href: string } | null = null

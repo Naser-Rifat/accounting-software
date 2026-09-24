@@ -1,0 +1,65 @@
+// ---------------------------------------------------------------------------
+// ADMINISTRATION
+//
+// The audit trail and the approval queue — docs/modules/12-administration.md.
+//
+// AuditLog is append-only: a trigger in the migration refuses UPDATE and
+// DELETE, so it holds no relations (a cascade would have to delete rows).
+// Who did it is a snapshot of the username, as every `createdBy` in this
+// schema is. Never contains password material — see audit-service.ts.
+// ---------------------------------------------------------------------------
+
+model AuditLog {
+  id String @id @default(cuid())
+
+  userId   String?
+  username String
+
+  /// SCREAMING_SNAKE verb, e.g. USER_CREATED, SETTING_CHANGED, APPLICATION_STATUS, LOGIN.
+  action   String
+  /// Entity name and id, e.g. "User" / cuid, "Setting" / "company.legalName".
+  entity   String
+  entityId String
+
+  before Json?
+  after  Json?
+
+  /// First hop of x-forwarded-for; spoofable unless behind a trusted proxy.
+  ip String?
+
+  createdAt DateTime @default(now())
+
+  @@index([entity, entityId])
+  @@index([username, createdAt])
+  @@index([action, createdAt])
+  @@index([createdAt])
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+/// A request for someone other than the requester to sign off an action —
+/// docs/modules/12 §Approval workflow. Modules raise these; the queue at
+/// /admin/approvals decides them. Nothing raises one yet.
+model ApprovalRequest {
+  id String @id @default(cuid())
+
+  entityType String
+  entityId   String
+
+  requestedBy String
+  approvedBy  String?
+
+  status       ApprovalStatus @default(PENDING)
+  note         String?
+  decisionNote String?
+
+  requestedAt DateTime  @default(now())
+  decidedOn   DateTime?
+
+  @@index([status, requestedAt])
+  @@index([entityType, entityId])
+}

@@ -3,7 +3,11 @@
 import { revalidatePath } from 'next/cache'
 
 import { isAccountingError } from '@/server/accounting/errors'
-import { canManageChartOfAccounts, canReopenPeriod } from '@/server/auth/authorize'
+import {
+  canManageChartOfAccounts,
+  canManageSettings,
+  canReopenPeriod,
+} from '@/server/auth/authorize'
 import { requireUser } from '@/server/auth/session'
 import { addExchangeRate, setCurrencyActive } from '@/server/services/currency-service'
 import { createFiscalYear } from '@/server/services/fiscal-year-service'
@@ -162,8 +166,10 @@ export async function submitSetting(
   formData: FormData,
 ): Promise<ActionState> {
   const user = await requireUser()
-  if (!canManageChartOfAccounts(user.role)) {
-    return { error: 'Your role cannot change settings.' }
+  // docs/modules/12 role table: settings belong to the administrator. Tax
+  // codes, numbering and currencies above stay with the accountant.
+  if (!canManageSettings(user.role)) {
+    return { error: 'Only an administrator can change settings.' }
   }
 
   const key = String(formData.get('key') ?? '')
@@ -184,8 +190,6 @@ export async function submitSetting(
     return fail(error, 'Could not update the setting.')
   }
 
-  revalidatePath('/admin/settings/numbering')
-  revalidatePath('/admin/tax-codes')
-  revalidatePath('/admin/fiscal-years')
+  revalidatePath('/admin', 'layout')
   return { message: `${key} updated.` }
 }

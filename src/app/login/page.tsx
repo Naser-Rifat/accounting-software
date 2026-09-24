@@ -16,7 +16,8 @@ export const metadata = {
 
 export default async function LoginPage() {
   // Already signed in — no reason to show the form again.
-  if (await getCurrentUser()) redirect('/modules')
+  const user = await getCurrentUser()
+  if (user) redirect(user.mustChangePassword ? '/account/password' : '/modules')
 
   return (
     <main className="flex min-h-screen items-center justify-center px-4 py-12">

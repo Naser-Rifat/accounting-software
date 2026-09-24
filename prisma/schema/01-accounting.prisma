@@ -219,7 +219,8 @@ model CostCenter {
   type     CostCenterType
   isActive Boolean        @default(true)
 
-  lines JournalLine[]
+  lines    JournalLine[]
+  branches Branch[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -248,6 +249,10 @@ model Party {
   bills      ExpenseBill[]
   payments   Payment[]
   debitNotes DebitNote[]
+  university University?
+  student    Student?
+  counselor  Counselor?
+  agent      Agent?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

@@ -1,8 +1,11 @@
 import 'server-only'
 
+import { SETTING_OPTIONS } from '@/config/app'
+import type { SettingSection } from '@/generated/prisma/enums'
+import { validateSettingValue } from '@/lib/validation/settings'
 import { AccountingError } from '@/server/accounting/errors'
 import { prisma } from '@/server/db/client'
-import type { SettingSection } from '@/generated/prisma/enums'
+import { recordAudit } from '@/server/services/audit-service'
 
 /**
  * Settings — docs/modules/16-settings.md.
@@ -22,7 +25,10 @@ export type SettingView = {
   lockReason: string | null
   updatedAt: string
   updatedBy: string | null
+  options: readonly string[] | null
 }
+
+const toDay = (d: Date) => d.toISOString().slice(0, 10)
 
 export async function getSetting(key: string): Promise<string | null> {
   const row = await prisma.setting.findUnique({ where: { key } })
@@ -57,7 +63,7 @@ export async function refreshLocks(): Promise<void> {
     {
       key: 'company.baseCurrency',
       locked: voucherCount > 0,
-      reason: `${voucherCount} voucher(s) posted in this currency`,
+      reason: `${voucherCount} voucher(s) posted — every amount was converted at this currency`,
     },
     {
       key: 'company.timezone',
@@ -79,15 +85,17 @@ export async function refreshLocks(): Promise<void> {
   }
 }
 
-export async function listSettings(section: SettingSection): Promise<SettingView[]> {
-  await refreshLocks()
-
-  const rows = await prisma.setting.findMany({
-    where: { section },
-    orderBy: { key: 'asc' },
-  })
-
-  return rows.map((row) => ({
+function toView(row: {
+  key: string
+  section: string
+  value: string
+  dataType: string
+  isLocked: boolean
+  lockReason: string | null
+  updatedAt: Date
+  updatedBy: string | null
+}): SettingView {
+  return {
     key: row.key,
     section: row.section,
     value: row.value,
@@ -96,12 +104,29 @@ export async function listSettings(section: SettingSection): Promise<SettingView
     lockReason: row.lockReason,
     updatedAt: row.updatedAt.toISOString(),
     updatedBy: row.updatedBy,
-  }))
+    options: SETTING_OPTIONS[row.key] ?? null,
+  }
+}
+
+export async function listSettings(section: SettingSection): Promise<SettingView[]> {
+  await refreshLocks()
+  const rows = await prisma.setting.findMany({ where: { section }, orderBy: { key: 'asc' } })
+  return rows.map(toView)
+}
+
+/** Every setting, for the hub's search. */
+export async function listAllSettings(): Promise<SettingView[]> {
+  await refreshLocks()
+  const rows = await prisma.setting.findMany({ orderBy: [{ section: 'asc' }, { key: 'asc' }] })
+  return rows.map(toView)
 }
 
 /**
  * Change a setting. Writes a dated history row and closes the previous one, so
  * the change is both auditable and resolvable by document date.
+ *
+ * `Setting.value` is the cache of what applies *today*: a change scheduled for
+ * a future date is recorded in history but does not replace it yet.
  */
 export async function updateSetting(input: {
   key: string
@@ -110,15 +135,27 @@ export async function updateSetting(input: {
   changedBy: string
   note?: string
 }) {
+  // Locks are derived from the ledger; recompute before trusting the cache, or
+  // a direct POST could change the base currency after the first posting.
+  await refreshLocks()
+
   const setting = await prisma.setting.findUnique({ where: { key: input.key } })
-  if (!setting) throw new AccountingError('INVALID_LINE', `Unknown setting ${input.key}.`)
+  if (!setting) throw new AccountingError('VALIDATION', `Unknown setting ${input.key}.`)
 
   if (setting.isLocked) {
     throw new AccountingError(
-      'INVALID_LINE',
+      'VALIDATION',
       `${input.key} is locked: ${setting.lockReason ?? 'it is already in use'}.`,
     )
   }
+
+  const value = input.value.trim()
+  const problem = validateSettingValue(input.key, setting.dataType, value)
+  if (problem) throw new AccountingError('VALIDATION', `${input.key}: ${problem}`)
+
+  const effectiveFrom = new Date(`${toDay(input.effectiveFrom)}T00:00:00.000Z`)
+  const today = new Date(`${toDay(new Date())}T00:00:00.000Z`)
+  const appliesNow = effectiveFrom <= today
 
   return prisma.$transaction(async (tx) => {
     const open = await tx.settingHistory.findFirst({
@@ -126,34 +163,46 @@ export async function updateSetting(input: {
       orderBy: { effectiveFrom: 'desc' },
     })
 
-    if (open && open.effectiveFrom >= input.effectiveFrom) {
+    if (open && open.effectiveFrom > effectiveFrom) {
       throw new AccountingError(
-        'INVALID_LINE',
-        `A value already applies from ${open.effectiveFrom.toISOString().slice(0, 10)}. Choose a later date.`,
+        'VALIDATION',
+        `A value already applies from ${toDay(open.effectiveFrom)}. Choose that date or a later one.`,
       )
     }
 
-    if (open) {
+    if (open && open.effectiveFrom.getTime() === effectiveFrom.getTime()) {
+      // Second change on the same day (a typo, say): amend the day's row rather
+      // than refuse. The audit log still records both changes.
       await tx.settingHistory.update({
         where: { id: open.id },
-        data: { effectiveTo: input.effectiveFrom },
+        data: { value, changedBy: input.changedBy, changedAt: new Date(), note: input.note },
+      })
+    } else {
+      if (open) {
+        await tx.settingHistory.update({ where: { id: open.id }, data: { effectiveTo: effectiveFrom } })
+      }
+      await tx.settingHistory.create({
+        data: { key: input.key, value, effectiveFrom, changedBy: input.changedBy, note: input.note },
       })
     }
 
-    await tx.settingHistory.create({
-      data: {
-        key: input.key,
-        value: input.value,
-        effectiveFrom: input.effectiveFrom,
-        changedBy: input.changedBy,
-        note: input.note,
-      },
+    const updated = appliesNow
+      ? await tx.setting.update({
+          where: { key: input.key },
+          data: { value, updatedBy: input.changedBy },
+        })
+      : setting
+
+    await recordAudit(tx, {
+      actor: { username: input.changedBy },
+      action: 'SETTING_CHANGED',
+      entity: 'Setting',
+      entityId: input.key,
+      before: { value: setting.value },
+      after: { value, effectiveFrom: toDay(effectiveFrom), appliesNow, note: input.note ?? null },
     })
 
-    return tx.setting.update({
-      where: { key: input.key },
-      data: { value: input.value, updatedBy: input.changedBy },
-    })
+    return updated
   })
 }
 
@@ -163,13 +212,35 @@ export async function getSettingHistory(key: string) {
     orderBy: { effectiveFrom: 'desc' },
     take: 20,
   })
+  return rows.map(historyView)
+}
 
-  return rows.map((row) => ({
+/** The latest changes across all keys (or one section's keys) — the hub's "changed recently". */
+export async function listRecentSettingChanges(limit = 10, section?: SettingSection) {
+  const rows = await prisma.settingHistory.findMany({
+    where: section ? { setting: { section } } : {},
+    orderBy: { changedAt: 'desc' },
+    take: limit,
+  })
+  return rows.map(historyView)
+}
+
+function historyView(row: {
+  key: string
+  value: string
+  effectiveFrom: Date
+  effectiveTo: Date | null
+  changedBy: string
+  changedAt: Date
+  note: string | null
+}) {
+  return {
+    key: row.key,
     value: row.value,
-    effectiveFrom: row.effectiveFrom.toISOString().slice(0, 10),
-    effectiveTo: row.effectiveTo?.toISOString().slice(0, 10) ?? null,
+    effectiveFrom: toDay(row.effectiveFrom),
+    effectiveTo: row.effectiveTo ? toDay(row.effectiveTo) : null,
     changedBy: row.changedBy,
     changedAt: row.changedAt.toISOString().slice(0, 16).replace('T', ' '),
     note: row.note,
-  }))
+  }
 }
