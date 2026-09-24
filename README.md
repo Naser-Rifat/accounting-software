@@ -35,6 +35,7 @@ npm run db:dev            # leave running; prints a DATABASE_URL
 cp .env.example .env      # paste the URL it printed
 npm run db:deploy         # apply migrations
 npm run db:seed           # chart of accounts, currencies, fiscal year, admin user
+npm run db:seed:demo      # optional: demo users, bills, invoices, claims, receipts
 
 npm run dev               # http://localhost:3000
 ```
@@ -51,6 +52,7 @@ Sign in with `admin` / `admin123` and change it before real use.
 | `npm run db:dev` | Local Prisma Postgres server |
 | `npm run db:migrate` | Create and apply a migration |
 | `npm run db:seed` | Idempotent seed |
+| `npm run db:seed:demo` | Demo transactions through every module, posted via the services (idempotent). Adds logins `accountant`, `farhana`, `edulink`, `viewer` — password `Welcome@2026` |
 | `npm run db:studio` | Browse the data |
 
 ## Documentation

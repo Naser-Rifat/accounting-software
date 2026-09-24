@@ -131,6 +131,20 @@ export async function seedStudents(prisma: PrismaClient, createdBy = 'seed') {
       academic: [{ level: 'Bachelor', institution: 'University of Dhaka', subject: 'Statistics', result: 'CGPA 3.81', yearOfPassing: 2025 }],
       notes: [{ kind: 'NOTE', body: 'Enrolled at Melbourne for the July intake. Visa granted; flight booked for late July.', daysAgo: 40 }],
     },
+    {
+      firstName: 'Mahmud', lastName: 'Hasan', passportNo: 'C55667788', passportExpiresOn: '2032-02-28',
+      email: 'mahmud.hasan@example.com', phone: '+880 1716 999000', dob: '2003-03-03', city: 'Dhaka',
+      counselor: 'imran', preferredCountries: ['GB'], status: 'COUNSELING',
+      academic: [{ level: 'Bachelor', institution: 'North South University', subject: 'Computer Science & Engineering', result: 'CGPA 3.45', yearOfPassing: 2025 }],
+      notes: [{ kind: 'NOTE', body: 'Enrolled at Greenwich for September. Visa granted; first commission instalment falls due on enrollment.', daysAgo: 12 }],
+    },
+    {
+      firstName: 'Rumana', lastName: 'Akter', passportNo: 'C10203040', passportExpiresOn: '2030-08-19',
+      email: 'rumana.akter@example.com', phone: '+880 1817 444555', dob: '2005-07-22', city: 'Chattogram',
+      counselor: 'shaila', agent: true, preferredCountries: ['MY'], status: 'COUNSELING',
+      academic: [{ level: 'HSC', institution: 'Chittagong Cantonment Public College', subject: 'Science', result: 'GPA 4.50', yearOfPassing: 2024 }],
+      notes: [{ kind: 'CALL', body: 'Visa refused — insufficient evidence of funds. Family will re-apply for January with updated bank statements.', nextFollowUpOn: '2026-10-10', daysAgo: 6 }],
+    },
   ]
 
   const studentIds: Record<string, string> = {}
@@ -290,23 +304,24 @@ export async function seedStudents(prisma: PrismaClient, createdBy = 'seed') {
     },
   })
 
-  const commissions = await prisma.commission.count({ where: { applicationId: sadia.id } })
-  if (commissions === 0) {
+  /** The EXPECTED instalments an enrolment implies under the agreement in force. */
+  async function ensureCommissions(app: Awaited<ReturnType<typeof ensureApplication>>) {
+    if ((await prisma.commission.count({ where: { applicationId: app.id } })) > 0) return
     const agreement = await prisma.commissionAgreement.findFirstOrThrow({
-      where: { universityId: sadia.universityId, isActive: true, effectiveFrom: { lte: sadia.enrolledOn! } },
+      where: { universityId: app.universityId, isActive: true, effectiveFrom: { lte: app.enrolledOn! } },
       include: { lines: { orderBy: { seq: 'asc' } } },
     })
     const calc = calculateCommission({
       appliesTo: agreement.appliesTo,
       rateType: agreement.rateType,
       rate: agreement.rate.toString(),
-      tuitionFee: sadia.tuitionFee.toFixed(2),
-      durationMonths: sadia.durationMonths,
+      tuitionFee: app.tuitionFee.toFixed(2),
+      durationMonths: app.durationMonths,
       lines: agreement.lines.map((l) => ({ seq: l.seq, label: l.label, percentOfTotal: l.percentOfTotal.toString(), id: l.id })),
     })
     await prisma.commission.createMany({
       data: calc.lines.map((line) => ({
-        applicationId: sadia.id,
+        applicationId: app.id,
         agreementId: agreement.id,
         scheduleLineId: line.scheduleLineId ?? null,
         instalmentSeq: line.seq,
@@ -321,7 +336,62 @@ export async function seedStudents(prisma: PrismaClient, createdBy = 'seed') {
       })),
     })
   }
+  await ensureCommissions(sadia)
   await prisma.student.update({ where: { id: sadia.studentId }, data: { status: 'VISA_APPROVED' } })
 
-  console.log(`  students        ${STUDENTS.length} (${created} new) · 3 applications · ${Object.keys(counselors).length} counselors · 4 intakes`)
+  // Mahmud: enrolled at Greenwich (GBP) → 2 EXPECTED instalments, which the
+  // demo seed (prisma/seed/demo.ts) drives through claim, receipt and payout.
+  const mahmud = await ensureApplication({
+    passportNo: 'C55667788',
+    universityCode: 'GREENWICH',
+    programName: 'MSc Data Science',
+    intake: '2026-9',
+    steps: [
+      { to: 'DRAFT', on: '2026-06-01' },
+      { to: 'SUBMITTED', on: '2026-06-03' },
+      { to: 'UNDER_REVIEW', on: '2026-06-10' },
+      { to: 'OFFER_RECEIVED', on: '2026-07-02' },
+      { to: 'DEPOSIT_PAID', on: '2026-07-20' },
+      { to: 'ENROLLED', on: '2026-09-10', note: '2 instalment(s) expected under "Representative Agreement 2026/27"' },
+    ],
+    fields: {
+      offerDate: day('2026-07-02'),
+      depositAmount: '3000.00',
+      depositPaidOn: day('2026-07-20'),
+      depositReference: 'GRE-DEP-20441',
+      enrolledOn: day('2026-09-10'),
+      visaStatus: 'APPROVED',
+      visaAppliedOn: day('2026-07-28'),
+      visaDecisionOn: day('2026-08-21'),
+    },
+  })
+  await ensureCommissions(mahmud)
+  await prisma.student.update({ where: { id: mahmud.studentId }, data: { status: 'VISA_APPROVED' } })
+
+  // Rumana: deposit paid at APU, then the visa was refused.
+  const rumana = await ensureApplication({
+    passportNo: 'C10203040',
+    universityCode: 'APU-MY',
+    programName: 'BSc (Hons) Software Engineering',
+    intake: '2026-9',
+    steps: [
+      { to: 'DRAFT', on: '2026-05-12' },
+      { to: 'SUBMITTED', on: '2026-05-14' },
+      { to: 'UNDER_REVIEW', on: '2026-05-20' },
+      { to: 'OFFER_RECEIVED', on: '2026-06-08' },
+      { to: 'DEPOSIT_PAID', on: '2026-06-25' },
+    ],
+    fields: {
+      offerDate: day('2026-06-08'),
+      depositAmount: '1000.00',
+      depositPaidOn: day('2026-06-25'),
+      depositReference: 'APU-DEP-7731',
+      visaStatus: 'REFUSED',
+      visaAppliedOn: day('2026-07-15'),
+      visaDecisionOn: day('2026-09-05'),
+    },
+  })
+  await prisma.student.update({ where: { id: rumana.studentId }, data: { status: 'DEPOSIT_PAID' } })
+
+  console.log(`  students        ${STUDENTS.length} (${created} new) · 5 applications · ${Object.keys(counselors).length} counselors · 4 intakes`)
 }
