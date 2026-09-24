@@ -47,6 +47,11 @@ export function canManageSetup(role: UserRole): boolean {
   return role === 'ADMIN' || role === 'ACCOUNTANT'
 }
 
+/** Commission pipeline, claims, receipts and payouts — the finance roles. */
+export function canManageCommission(role: UserRole): boolean {
+  return role === 'ADMIN' || role === 'ACCOUNTANT'
+}
+
 // --- Administration — docs/modules/12-administration.md role table -------
 
 export function isAdmin(role: UserRole): boolean {

@@ -6,7 +6,10 @@ import { usePathname } from 'next/navigation'
 import {
   ACCOUNTING_NAV,
   ADMIN_NAV,
+  COMMISSION_NAV,
   NAV,
+  REPORTS_NAV,
+  SALES_NAV,
   PURCHASES_NAV,
   STUDENTS_NAV,
   UNIVERSITIES_NAV,
@@ -24,7 +27,7 @@ import {
  * alone tells you what you are looking at, not which section it belongs to.
  */
 
-const SETS: NavGroup[][] = [ACCOUNTING_NAV, PURCHASES_NAV, UNIVERSITIES_NAV, STUDENTS_NAV, ADMIN_NAV, NAV]
+const SETS: NavGroup[][] = [ACCOUNTING_NAV, PURCHASES_NAV, UNIVERSITIES_NAV, STUDENTS_NAV, ADMIN_NAV, COMMISSION_NAV, SALES_NAV, REPORTS_NAV, NAV]
 
 function findTrail(pathname: string): { group: string; item: string; href: string } | null {
   let best: { group: string; item: string; href: string } | null = null

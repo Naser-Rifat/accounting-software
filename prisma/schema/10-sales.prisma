@@ -1,0 +1,205 @@
+// ---------------------------------------------------------------------------
+// SALES — money in
+//
+// Student fee invoices (the student is a customer behind 1110), the receipts
+// that settle invoices and commission claims alike, credit notes and refunds.
+// One Receipt model serves students and universities — the party says which —
+// and allocation rows let one receipt settle several documents.
+//
+// Rules: docs/modules/06-student-payments.md, 05-university-receivable.md
+// Entries: docs/06-posting-matrix.md rows 6–8 and 12–19
+// ---------------------------------------------------------------------------
+
+enum InvoiceStatus {
+  DRAFT
+  ISSUED
+  PARTIALLY_PAID
+  PAID
+  CANCELLED
+  REFUNDED
+}
+
+enum FeeType {
+  APPLICATION
+  SERVICE
+  VISA_PROCESSING
+  COUNSELING
+  DOCUMENTATION
+  OTHER
+}
+
+enum RefundStatus {
+  REQUESTED
+  APPROVED
+  PAID
+  REJECTED
+}
+
+model StudentInvoice {
+  id        String @id @default(cuid())
+  invoiceNo String @unique
+
+  studentId     String
+  /// The student's Party — every 1110 line carries it.
+  partyId       String
+  applicationId String?
+
+  issuedOn DateTime? @db.Date
+  dueOn    DateTime? @db.Date
+
+  subtotal  Decimal @db.Decimal(18, 2)
+  discount  Decimal @default(0) @db.Decimal(18, 2)
+  taxAmount Decimal @default(0) @db.Decimal(18, 2)
+  /// subtotal - discount + taxAmount
+  total     Decimal @db.Decimal(18, 2)
+  currency  String  @default("BDT")
+
+  status InvoiceStatus @default(DRAFT)
+
+  /// The SI voucher raised at ISSUED.
+  journalEntryId String?
+  notes          String?
+
+  student     Student              @relation(fields: [studentId], references: [id])
+  party       Party                @relation(fields: [partyId], references: [id])
+  application Application?         @relation(fields: [applicationId], references: [id])
+  lines       StudentInvoiceLine[]
+  allocations ReceiptAllocation[]
+  creditNotes CreditNote[]
+
+  createdBy String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([studentId])
+  @@index([status, dueOn])
+}
+
+model StudentInvoiceLine {
+  id        String @id @default(cuid())
+  invoiceId String
+  seq       Int
+
+  feeType     FeeType
+  description String
+  amount      Decimal @db.Decimal(18, 2)
+  /// Output VAT code applied to this line, if any; tax posts to the code's account.
+  taxCode   String?
+  taxAmount Decimal @default(0) @db.Decimal(18, 2)
+
+  invoice StudentInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@unique([invoiceId, seq])
+}
+
+/// Money in. The receipt IS the receipt voucher, so `receiptNo` is the RV number.
+model Receipt {
+  id        String @id @default(cuid())
+  receiptNo String @unique
+
+  partyId    String
+  receivedOn DateTime @db.Date
+
+  /// Gross amount settled against the party's account, in the receipt currency.
+  amount      Decimal @db.Decimal(18, 2)
+  /// Tax deducted at source by the payer (universities) — posts to 1310.
+  withheldTax Decimal @default(0) @db.Decimal(18, 2)
+  currency    String
+  fxRate      Decimal @db.Decimal(18, 8)
+  baseAmount  Decimal @db.Decimal(18, 2)
+
+  /// Part not allocated to any document — a student advance on 2110.
+  unallocatedAmount Decimal @default(0) @db.Decimal(18, 2)
+
+  bankAccountCode String
+  method          PaymentMethod @default(BANK_TRANSFER)
+  reference       String?
+
+  journalEntryId String?
+
+  party       Party               @relation(fields: [partyId], references: [id])
+  allocations ReceiptAllocation[]
+
+  createdBy String
+  createdAt DateTime @default(now())
+
+  @@index([partyId])
+  @@index([receivedOn])
+}
+
+/// One receipt settles several claims or invoices; each row is one settlement.
+model ReceiptAllocation {
+  id        String  @id @default(cuid())
+  receiptId String
+  claimId   String?
+  invoiceId String?
+
+  /// In the receipt currency.
+  amount     Decimal @db.Decimal(18, 2)
+  /// What this settlement relieved on the control account, in base currency.
+  baseAmount Decimal @db.Decimal(18, 2)
+
+  receipt Receipt          @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+  claim   CommissionClaim? @relation(fields: [claimId], references: [id])
+  invoice StudentInvoice?  @relation(fields: [invoiceId], references: [id])
+
+  @@index([claimId])
+  @@index([invoiceId])
+}
+
+/// Reduces a student receivable — a refund's first step, or a cancellation.
+/// Row 17/19: Dr 4090 / Cr 1110. Invoices are never edited once issued.
+model CreditNote {
+  id     String @id @default(cuid())
+  noteNo String @unique
+
+  partyId   String
+  invoiceId String?
+
+  issuedOn DateTime @db.Date
+  amount   Decimal  @db.Decimal(18, 2)
+  reason   String
+
+  journalEntryId String?
+
+  party   Party           @relation(fields: [partyId], references: [id])
+  invoice StudentInvoice? @relation(fields: [invoiceId], references: [id])
+  refund  Refund?
+
+  createdBy String
+  createdAt DateTime @default(now())
+
+  @@index([partyId])
+  @@index([invoiceId])
+}
+
+/// Cash back to a student. Needs a credit note first (the obligation is
+/// cancelled in the books before cash leaves) and approval before payment.
+/// Row 18: Dr 1110 / Cr bank.
+model Refund {
+  id String @id @default(cuid())
+
+  studentId    String
+  creditNoteId String @unique
+
+  amount Decimal @db.Decimal(18, 2)
+  reason String
+  status RefundStatus @default(REQUESTED)
+
+  requestedBy String
+  approvedBy  String?
+  approvedOn  DateTime?
+  paidOn      DateTime? @db.Date
+  bankAccountCode String?
+  /// The PV voucher raised when paid.
+  journalEntryId String?
+
+  student    Student    @relation(fields: [studentId], references: [id])
+  creditNote CreditNote @relation(fields: [creditNoteId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([studentId])
+  @@index([status])
+}

@@ -60,6 +60,7 @@ model University {
   agreements   CommissionAgreement[]
   applications Application[]
   documents    Document[]
+  claims       CommissionClaim[]
 
   createdBy String
   createdAt DateTime @default(now())

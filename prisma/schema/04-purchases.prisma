@@ -120,6 +120,7 @@ model Payment {
 
   party       Party               @relation(fields: [partyId], references: [id])
   allocations PaymentAllocation[]
+  internalCommissions InternalCommission[]
 
   createdBy String
   createdAt DateTime @default(now())

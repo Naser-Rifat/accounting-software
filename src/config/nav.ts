@@ -205,6 +205,83 @@ export const NAV: NavGroup[] = [
 ]
 
 /** Sidebar for the Purchases & Payments module. */
+/** Sidebar for the Reports module. Routes match docs/09-navigation.md. */
+export const REPORTS_NAV: NavGroup[] = [
+  {
+    label: 'Reports',
+    items: [
+      { label: 'Financial Reports', href: '/reports/financial' },
+      { label: 'Tax Reports', href: '/reports/tax' },
+      { label: 'Commission Reports', href: '/reports/commission' },
+      { label: 'Student Reports', href: '/reports/students' },
+      { label: 'University Reports', href: '/reports/universities' },
+    ],
+  },
+  {
+    label: 'Ledger',
+    items: [
+      { label: 'Trial Balance', href: '/accounting/trial-balance' },
+      { label: 'General Ledger', href: '/accounting/ledger' },
+      { label: 'Party Ledger', href: '/accounting/party-ledger' },
+      { label: 'Day Book', href: '/accounting/reports/day-book' },
+    ],
+  },
+]
+
+/** Sidebar for the Sales & Receipts module. Routes match docs/09-navigation.md. */
+export const SALES_NAV: NavGroup[] = [
+  {
+    label: 'Sales',
+    items: [
+      { label: 'Student Invoices', href: '/sales/invoices' },
+      { label: 'Receipts', href: '/sales/receipts' },
+      { label: 'Credit Notes', href: '/sales/credit-notes' },
+      { label: 'Refunds', href: '/sales/refunds' },
+    ],
+  },
+  {
+    label: 'Commission',
+    items: [
+      { label: 'Commission Claims', href: '/commission/claims' },
+      { label: 'Commission Receivables', href: '/commission/receivables' },
+    ],
+  },
+  {
+    label: 'Accounting',
+    items: [
+      { label: 'Vouchers', href: '/accounting/vouchers' },
+      { label: 'Party Ledger', href: '/accounting/party-ledger' },
+      { label: 'Trial Balance', href: '/accounting/trial-balance' },
+    ],
+  },
+]
+
+/** Sidebar for the University Commission module. Routes match docs/09-navigation.md. */
+export const COMMISSION_NAV: NavGroup[] = [
+  {
+    label: 'Commission',
+    items: [
+      { label: 'University Commission', href: '/commission' },
+      { label: 'Commission Claims', href: '/commission/claims' },
+      { label: 'Commission Receivables', href: '/commission/receivables' },
+      { label: 'Counselor Commission', href: '/commission/counselor' },
+      { label: 'Agent Commission', href: '/commission/agent' },
+    ],
+  },
+  {
+    label: 'Sales',
+    items: [{ label: 'Receipts', href: '/sales/receipts' }],
+  },
+  {
+    label: 'Accounting',
+    items: [
+      { label: 'Vouchers', href: '/accounting/vouchers' },
+      { label: 'Party Ledger', href: '/accounting/party-ledger' },
+      { label: 'Trial Balance', href: '/accounting/trial-balance' },
+    ],
+  },
+]
+
 /** Sidebar for the Administration module. Routes match docs/09-navigation.md. */
 export const ADMIN_NAV: NavGroup[] = [
   {

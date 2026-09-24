@@ -254,6 +254,12 @@ model Party {
   counselor  Counselor?
   agent      Agent?
 
+  claims              CommissionClaim[]
+  internalCommissions InternalCommission[]
+  receipts            Receipt[]
+  invoices            StudentInvoice[]
+  creditNotes         CreditNote[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

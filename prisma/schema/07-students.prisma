@@ -73,6 +73,7 @@ model Counselor {
   students     Student[]
   applications Application[]
   user         User?
+  internalCommissions InternalCommission[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -98,6 +99,7 @@ model Agent {
   party    Party     @relation(fields: [partyId], references: [id])
   students Student[]
   user     User?
+  internalCommissions InternalCommission[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -149,6 +151,8 @@ model Student {
   activities   StudentActivity[]
   applications Application[]
   documents    Document[]
+  invoices     StudentInvoice[]
+  refunds      Refund[]
 
   createdBy String
   createdAt DateTime @default(now())

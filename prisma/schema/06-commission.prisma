@@ -163,10 +163,15 @@ model Commission {
 
   /// The JV raised at APPROVED.
   journalEntryId String?
+  /// Set when added to a claim (status CLAIMED); cleared if removed from a DRAFT claim.
+  claimId        String?
 
   application  Application             @relation(fields: [applicationId], references: [id])
   agreement    CommissionAgreement     @relation(fields: [agreementId], references: [id])
   scheduleLine CommissionScheduleLine? @relation(fields: [scheduleLineId], references: [id])
+  claim        CommissionClaim?        @relation(fields: [claimId], references: [id])
+  adjustments  CommissionAdjustment[]
+  internal     InternalCommission[]
 
   createdBy String
   createdAt DateTime @default(now())
@@ -175,4 +180,149 @@ model Commission {
   @@unique([applicationId, instalmentSeq])
   @@index([status])
   @@index([agreementId])
+}
+
+// ---------------------------------------------------------------------------
+// Claims, adjustments and internal commission — docs/modules/04, 05 and 08.
+// ---------------------------------------------------------------------------
+
+/// docs/02-status-flows.md §Commission claim status. Posting happens at SENT.
+enum ClaimStatus {
+  DRAFT
+  SENT
+  ACKNOWLEDGED
+  PARTIALLY_PAID
+  PAID
+  DISPUTED
+  WRITTEN_OFF
+  CANCELLED
+}
+
+enum AdjustmentReason {
+  SCHOLARSHIP_REDUCTION
+  PARTIAL_WITHDRAWAL
+  UNIVERSITY_DISPUTE
+  CURRENCY_DIFFERENCE
+  BONUS
+  CORRECTION
+}
+
+enum InternalCommissionStatus {
+  ACCRUED
+  APPROVED
+  PARTIALLY_PAID
+  PAID
+  CANCELLED
+}
+
+/// The sales invoice to a university: approved commissions grouped into one
+/// billable document. Row 3 posts at SENT — Dr 1120 (party) / Cr 1130.
+model CommissionClaim {
+  id      String @id @default(cuid())
+  claimNo String @unique
+
+  universityId String
+  /// The university's Party — every 1120 line carries it.
+  partyId      String
+
+  claimedOn DateTime? @db.Date
+  /// claimedOn + agreement.paymentTermsDays; drives aging.
+  dueOn     DateTime? @db.Date
+
+  /// Sum of member commissions' net amounts, in the claim currency.
+  totalAmount Decimal  @db.Decimal(18, 2)
+  currency    String
+  fxRate      Decimal? @db.Decimal(18, 8)
+  baseAmount  Decimal? @db.Decimal(18, 2)
+
+  status ClaimStatus @default(DRAFT)
+
+  /// The SI voucher raised at SENT.
+  journalEntryId String?
+  invoiceUrl     String?
+  notes          String?
+
+  university  University          @relation(fields: [universityId], references: [id])
+  party       Party               @relation(fields: [partyId], references: [id])
+  commissions Commission[]
+  allocations ReceiptAllocation[]
+
+  createdBy String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([universityId, status])
+  @@index([status, dueOn])
+}
+
+/// A dated change to a commission after approval. `expectedAmount` is never
+/// edited; the delta is posted (rows 4–5) and added to `netAmount`.
+model CommissionAdjustment {
+  id           String @id @default(cuid())
+  commissionId String
+
+  /// Signed: negative reduces, positive increases.
+  amount Decimal          @db.Decimal(18, 2)
+  reason AdjustmentReason
+  note   String?
+
+  /// CN for a reduction, SI for an increase.
+  journalEntryId String?
+
+  commission Commission @relation(fields: [commissionId], references: [id])
+
+  createdBy String
+  createdAt DateTime @default(now())
+
+  @@index([commissionId])
+}
+
+/// What the agency owes its counselor or sub-agent for one commission — a
+/// direct cost of revenue, accrued when the university commission is APPROVED
+/// and posted in the same period (row 29). Exactly one of counselor / agent.
+model InternalCommission {
+  id            String @id @default(cuid())
+  applicationId String
+  commissionId  String
+
+  /// Party of type COUNSELOR or AGENT on 2020.
+  partyId     String
+  counselorId String?
+  agentId     String?
+
+  rateType RateType
+  rate     Decimal  @db.Decimal(18, 4)
+
+  /// The university commission's net amount (or gross — setting internal_commission.base).
+  baseAmount   Decimal @db.Decimal(18, 2)
+  earnedAmount Decimal @db.Decimal(18, 2)
+  paidAmount   Decimal @default(0) @db.Decimal(18, 2)
+  currency     String
+
+  fxRate             Decimal? @db.Decimal(18, 8)
+  baseCurrencyAmount Decimal? @db.Decimal(18, 2)
+
+  status InternalCommissionStatus @default(ACCRUED)
+
+  approvedOn DateTime? @db.Date
+  paidOn     DateTime? @db.Date
+
+  /// The PB voucher raised at APPROVED; the payment voucher hangs off Payment.
+  journalEntryId String?
+  paymentId      String?
+
+  application Application @relation(fields: [applicationId], references: [id])
+  commission  Commission  @relation(fields: [commissionId], references: [id])
+  party       Party       @relation(fields: [partyId], references: [id])
+  counselor   Counselor?  @relation(fields: [counselorId], references: [id])
+  agent       Agent?      @relation(fields: [agentId], references: [id])
+  payment     Payment?    @relation(fields: [paymentId], references: [id])
+
+  createdBy String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([commissionId, partyId])
+  @@index([partyId, status])
+  @@index([status])
 }

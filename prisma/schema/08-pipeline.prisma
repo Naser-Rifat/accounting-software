@@ -114,6 +114,8 @@ model Application {
   history     ApplicationStatusHistory[]
   documents   Document[]
   commissions Commission[]
+  invoices    StudentInvoice[]
+  internalCommissions InternalCommission[]
 
   createdBy String
   createdAt DateTime @default(now())
